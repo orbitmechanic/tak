@@ -62,6 +62,14 @@ func _unhandled_input(event: InputEvent) -> void:
 				_select_tool(TakState.CAPSTONE)
 			KEY_ESCAPE:
 				_clear_selection()
+			KEY_LEFT:
+				_on_direction_pressed(1)
+			KEY_RIGHT:
+				_on_direction_pressed(0)
+			KEY_DOWN:
+				_on_direction_pressed(2)
+			KEY_UP:
+				_on_direction_pressed(3)
 			KEY_Z:
 				if key.ctrl_pressed:
 					_undo()
@@ -79,10 +87,6 @@ func _draw() -> void:
 	draw_rect(Rect2(Vector2.ZERO, get_viewport_rect().size), Color("#e8ddc8"))
 	draw_rect(Rect2(BOARD_ORIGIN - Vector2(9, 9), Vector2(BOARD_PIXELS + 18, BOARD_PIXELS + 18)), Color("#70452e"))
 	draw_rect(Rect2(BOARD_ORIGIN, Vector2(BOARD_PIXELS, BOARD_PIXELS)), Color("#c99b64"))
-	draw_rect(Rect2(BOARD_ORIGIN - Vector2(7, 0), Vector2(7, BOARD_PIXELS)), Color("#b9a07a"))
-	draw_rect(Rect2(BOARD_ORIGIN + Vector2(BOARD_PIXELS, 0), Vector2(7, BOARD_PIXELS)), Color("#b9a07a"))
-	draw_rect(Rect2(BOARD_ORIGIN, Vector2(BOARD_PIXELS, 7)), Color("#51465e"))
-	draw_rect(Rect2(BOARD_ORIGIN + Vector2(0, BOARD_PIXELS), Vector2(BOARD_PIXELS, 7)), Color("#51465e"))
 	for cell: int in range(25):
 		var x: int = cell % 5
 		var y: int = int(cell / 5)
@@ -96,6 +100,12 @@ func _draw() -> void:
 			draw_rect(rect.grow(-4), Color(0.95, 0.79, 0.28, 0.54))
 		draw_rect(rect, Color("#78583b"), false, 2.0)
 		_draw_stack(cell, rect)
+	draw_rect(Rect2(BOARD_ORIGIN - Vector2(9, 0), Vector2(9, BOARD_PIXELS)), LIGHT_COLOR)
+	draw_rect(Rect2(BOARD_ORIGIN + Vector2(BOARD_PIXELS, 0), Vector2(9, BOARD_PIXELS)), LIGHT_COLOR)
+	draw_line(BOARD_ORIGIN + Vector2(BOARD_PIXELS - 9, 0), BOARD_ORIGIN + Vector2(BOARD_PIXELS - 9, BOARD_PIXELS), Color("#78583b"), 2.0)
+	draw_line(BOARD_ORIGIN, BOARD_ORIGIN + Vector2(0, BOARD_PIXELS), Color("#78583b"), 2.0)
+	draw_rect(Rect2(BOARD_ORIGIN, Vector2(BOARD_PIXELS, 9)), DARK_COLOR)
+	draw_rect(Rect2(BOARD_ORIGIN + Vector2(0, BOARD_PIXELS), Vector2(BOARD_PIXELS, 9)), DARK_COLOR)
 	if state.over:
 		draw_rect(Rect2(BOARD_ORIGIN, Vector2(BOARD_PIXELS, BOARD_PIXELS)), Color(0.10, 0.08, 0.07, 0.46))
 		var winning_cells: Array[int] = []
@@ -224,8 +234,8 @@ func _build_hud() -> void:
 		button.disabled = true
 		direction_buttons.append(button)
 	_add_label("CARRY", Vector2(665, 403), Vector2(110, 25), 15, Color("#554533"))
-	_add_label("Road goal: Light left-right; Dark top-bottom.", Vector2(665, 488), Vector2(390, 50), 14, Color("#51473d"))
-	_add_label("Click an empty square to place. F/W/C select stone; Esc clears selection.", Vector2(665, 549), Vector2(390, 64), 14, Color("#51473d"))
+	_add_label("Road goal: YOUR stones must form one unbroken chain (no diagonals) between your two home edges. Light connects the CREAM sides (left-right); Dark connects the CRIMSON sides (top-bottom).", Vector2(665, 470), Vector2(400, 80), 14, Color("#51473d"))
+	_add_label("Click an empty square to place. F/W/C select stone; arrows pick direction; Esc clears selection.", Vector2(665, 549), Vector2(390, 64), 14, Color("#51473d"))
 
 func _add_label(text: String, position: Vector2, size: Vector2, font_size: int, color: Color) -> Label:
 	var label: Label = Label.new()
@@ -259,11 +269,22 @@ func _select_tool(type: int) -> void:
 	_update_hud()
 
 func _on_cell_clicked(cell: int) -> void:
-	if selected_from >= 0 and selected_direction >= 0 and cell in legal_destinations:
-		var move: Dictionary = _make_move(cell)
-		if state.is_legal(move):
-			_commit_move(move)
-			return
+	if selected_from >= 0 and cell != selected_from:
+		var tried: Array[int] = []
+		if selected_direction >= 0:
+			tried.append(selected_direction)
+		for direction: int in range(4):
+			if direction not in tried:
+				tried.append(direction)
+		for direction: int in tried:
+			var distance: int = _ray_distance(selected_from, cell, direction)
+			if distance < 0:
+				continue
+			var drops: Array[int] = _auto_drops(selected_from, selected_carry, direction, distance)
+			var move: Dictionary = {"kind": "move", "from": selected_from, "carry": selected_carry, "dir": direction, "drops": drops}
+			if state.is_legal(move):
+				_commit_move(move)
+				return
 	if selected_from >= 0 and selected_direction >= 0 and cell == selected_from:
 		_clear_selection()
 		return
@@ -341,11 +362,21 @@ func _auto_drops(origin: int, carry: int, direction: int, distance: int) -> Arra
 			remaining -= count
 	return drops if remaining == 0 else []
 
-func _make_move(destination: int) -> Dictionary:
-	var direction: int = selected_direction
-	var distance: int = absi((destination % 5) - (selected_from % 5)) + absi(int(destination / 5) - int(selected_from / 5))
-	var drops: Array[int] = _auto_drops(selected_from, selected_carry, direction, distance)
-	return {"kind": "move", "from": selected_from, "carry": selected_carry, "dir": direction, "drops": drops}
+func _ray_distance(origin: int, cell: int, direction: int) -> int:
+	var ox: int = origin % 5
+	var oy: int = int(origin / 5)
+	var cx: int = cell % 5
+	var cy: int = int(cell / 5)
+	match direction:
+		0:
+			return cx - ox if cy == oy and cx > ox else -1
+		1:
+			return ox - cx if cy == oy and cx < ox else -1
+		2:
+			return cy - oy if cx == ox and cy > oy else -1
+		3:
+			return oy - cy if cx == ox and cy < oy else -1
+	return -1
 
 func _cell_at_distance(origin: int, direction: int, distance: int) -> int:
 	var x: int = origin % 5

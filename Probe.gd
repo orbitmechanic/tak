@@ -19,6 +19,7 @@ func _initialize() -> void:
 	_test_clone()
 	_test_fast_legal_check()
 	_test_random_move_sampler()
+	await _test_ui_flow()
 	_test_mcts()
 	print("RESULT=%d_passed,%d_failed" % [passed, failed])
 	quit(0 if failed == 0 else 1)
@@ -233,6 +234,37 @@ func _test_random_move_sampler() -> void:
 		state.apply_move(move)
 	_check("random move sampler emits legal moves", checked > 0 and legal, "sampled an illegal move")
 	_check("random move sampler checked 300 positions", checked >= 250, "too many sampler calls returned empty")
+
+func _test_ui_flow() -> void:
+	var game = load("res://scenes/Main.tscn").instantiate()
+	root.add_child(game)
+	await process_frame
+	game.hotseat = true
+	game._commit_move({"kind": "place", "cell": 10, "piece_type": TakState.FLAT})
+	game._commit_move({"kind": "place", "cell": 11, "piece_type": TakState.FLAT})
+	game._commit_move({"kind": "place", "cell": 12, "piece_type": TakState.FLAT})
+	game._select_stack(10)
+	var dest_shown: bool = 11 in game.legal_destinations
+	var key: InputEventKey = InputEventKey.new()
+	key.keycode = KEY_LEFT
+	key.pressed = true
+	game._unhandled_input(key)
+	var arrow_sets_direction: bool = game.selected_direction == 1
+	game._on_cell_clicked(11)
+	var moved_without_ray_direction: bool = int(game.state.heights[11]) == 2 and int(game.state.heights[10]) == 0
+	game._new_game()
+	var s = game.state
+	s.opening_done = PackedByteArray([1, 1])
+	s.current = 0
+	for cell: int in [10, 11, 12, 13]:
+		_put(s, cell, 0, TakState.FLAT)
+	game._commit_move({"kind": "place", "cell": 14, "piece_type": TakState.FLAT})
+	var announced: bool = s.over and s.winner == 0 and "Light wins by road" in game.status_label.text
+	game.queue_free()
+	_check("selecting stack highlights destinations", dest_shown, "no highlight after stack selection")
+	_check("arrow key picks move direction", arrow_sets_direction, "left arrow did not select direction 1")
+	_check("destination click works after stack select", moved_without_ray_direction, "clicking highlighted cell failed to move")
+	_check("road win ends game and is announced", announced, "winning road did not stop/announce game")
 
 func _seeded_midgame_state() -> TakState:
 	var state: TakState = TakState.new()
