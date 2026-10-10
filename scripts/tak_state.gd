@@ -76,29 +76,53 @@ func piece_type(cell: int, layer: int = -1) -> int:
 		return -1
 	return int(cells[cell * MAX_STACK + level]) % 3
 
-func is_road_piece(cell: int, player: int) -> bool:
-	var top_type: int = piece_type(cell)
-	return piece_owner(cell) == player and (top_type == FLAT or top_type == CAPSTONE)
-
 func road_exists(player: int) -> bool:
 	if _road_masks_dirty:
 		_rebuild_road_masks()
 	if _road_status_dirty[player] != 0:
-		_road_status[player] = 1 if _mask_has_road(int(_road_masks[player]), player) else 0
+		_road_status[player] = 1 if _mask_connects(int(_road_masks[player]), true) or _mask_connects(int(_road_masks[player]), false) else 0
 		_road_status_dirty[player] = 0
 	return _road_status[player] != 0
 
-func _mask_has_road(qualifying: int, player: int) -> bool:
-	var frontier: int = qualifying & (LEFT_EDGE_MASK if player == 0 else TOP_EDGE_MASK)
+func _mask_connects(qualifying: int, horizontal: bool) -> bool:
+	var start: int = LEFT_EDGE_MASK if horizontal else TOP_EDGE_MASK
+	var goal: int = RIGHT_EDGE_MASK if horizontal else BOTTOM_EDGE_MASK
+	var frontier: int = qualifying & start
 	var seen: int = 0
-	var goal: int = RIGHT_EDGE_MASK if player == 0 else BOTTOM_EDGE_MASK
 	while frontier != 0:
 		if (frontier & goal) != 0:
 			return true
 		seen |= frontier
-		var neighbors: int = ((frontier << 1) & ~LEFT_EDGE_MASK) | ((frontier >> 1) & ~RIGHT_EDGE_MASK) | (frontier << BOARD_SIZE) | (frontier >> BOARD_SIZE)
+		var neighbors: int = ((frontier << 1) & ~LEFT_EDGE_MASK) | ((frontier >> 1) & ~RIGHT_EDGE_MASK) | (((frontier << BOARD_SIZE) | (frontier >> BOARD_SIZE)) & BOARD_MASK)
 		frontier = neighbors & qualifying & BOARD_MASK & ~seen
 	return false
+
+func road_cells(player: int) -> Array[int]:
+	if _road_masks_dirty:
+		_rebuild_road_masks()
+	var qualifying: int = int(_road_masks[player])
+	for horizontal: bool in [true, false]:
+		var found: Array[int] = _road_cells_dir(qualifying, horizontal)
+		if not found.is_empty():
+			return found
+	return []
+
+func _road_cells_dir(qualifying: int, horizontal: bool) -> Array[int]:
+	var start: int = LEFT_EDGE_MASK if horizontal else TOP_EDGE_MASK
+	var goal: int = RIGHT_EDGE_MASK if horizontal else BOTTOM_EDGE_MASK
+	var frontier: int = qualifying & start
+	var seen: int = 0
+	while frontier != 0:
+		seen |= frontier
+		if (frontier & goal) != 0:
+			var result: Array[int] = []
+			for cell: int in range(CELL_COUNT):
+				if (seen & (1 << cell)) != 0:
+					result.append(cell)
+			return result
+		var neighbors: int = ((frontier << 1) & ~LEFT_EDGE_MASK) | ((frontier >> 1) & ~RIGHT_EDGE_MASK) | (((frontier << BOARD_SIZE) | (frontier >> BOARD_SIZE)) & BOARD_MASK)
+		frontier = neighbors & qualifying & BOARD_MASK & ~seen
+	return []
 
 func _rebuild_road_masks() -> void:
 	_road_masks[0] = 0
@@ -158,42 +182,6 @@ func _update_road_mask_cell(cell: int) -> void:
 		_road_status_dirty[0] = 1
 	if old_dark != (int(_road_masks[1]) & bit):
 		_road_status_dirty[1] = 1
-
-func road_cells(player: int) -> Array[int]:
-	var visited: PackedByteArray = PackedByteArray()
-	visited.resize(CELL_COUNT)
-	visited.fill(0)
-	var queue: Array[int] = []
-	var head: int = 0
-	if player == 0:
-		for y: int in range(BOARD_SIZE):
-			var start: int = y * BOARD_SIZE
-			if is_road_piece(start, player):
-				visited[start] = 1
-				queue.append(start)
-	else:
-		for x: int in range(BOARD_SIZE):
-			var start: int = x
-			if is_road_piece(start, player):
-				visited[start] = 1
-				queue.append(start)
-	while head < queue.size():
-		var cell: int = queue[head]
-		head += 1
-		var x: int = cell % BOARD_SIZE
-		var y: int = cell / BOARD_SIZE
-		if (player == 0 and x == BOARD_SIZE - 1) or (player == 1 and y == BOARD_SIZE - 1):
-			var result: Array[int] = []
-			for visited_cell: int in range(CELL_COUNT):
-				if visited[visited_cell] == 1:
-					result.append(visited_cell)
-			return result
-		for direction: int in range(4):
-			var next: int = _neighbor(cell, direction)
-			if next >= 0 and visited[next] == 0 and is_road_piece(next, player):
-				visited[next] = 1
-				queue.append(next)
-	return []
 
 func flats_count(player: int) -> int:
 	var total: int = 0

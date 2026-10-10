@@ -163,6 +163,26 @@ func _test_roads() -> void:
 	_check("vertical Dark road", vertical.road_exists(1), "top-to-bottom chain not found")
 	_check("wall on top breaks road", not broken.road_exists(0), "buried road piece incorrectly counted")
 	_check("diagonal chain is not a road", not diagonal.road_exists(0), "diagonal connectivity was accepted")
+	var vlight: TakState = _normal_state()
+	for y: int in range(5):
+		_put(vlight, y * 5 + 2, 0, TakState.FLAT)
+	var hdark: TakState = _normal_state()
+	for x: int in range(5):
+		_put(hdark, 10 + x, 1, TakState.FLAT)
+	_check("vertical Light road also counts", vlight.road_exists(0), "either-direction rule not applied to Light")
+	_check("horizontal Dark road also counts", hdark.road_exists(1), "either-direction rule not applied to Dark")
+	var vw: TakState = _normal_state()
+	vw.current = 0
+	for y: int in range(4):
+		_put(vw, y * 5 + 2, 0, TakState.FLAT)
+	vw.apply_move({"kind": "place", "cell": 22, "piece_type": TakState.FLAT})
+	_check("vertical Light road ends game", vw.over and vw.winner == 0, "vertical win not detected in apply_move")
+	var hw: TakState = _normal_state()
+	hw.current = 1
+	for x: int in range(4):
+		_put(hw, 5 + x, 1, TakState.FLAT)
+	hw.apply_move({"kind": "place", "cell": 9, "piece_type": TakState.FLAT})
+	_check("horizontal Dark road ends game", hw.over and hw.winner == 1, "horizontal win not detected for Dark")
 
 func _filled_board(light_flats: int, dark_flats: int) -> TakState:
 	var state: TakState = _normal_state()

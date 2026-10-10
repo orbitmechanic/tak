@@ -10,7 +10,7 @@ A two-player digital implementation of [Tak](https://en.wikipedia.org/wiki/Tak_(
 - Opening moves: each player places one of the *opponent's* flats
 - Place or move per turn; stack carry limit of 5 with mandatory drop in every cell entered
 - Walls are immobile, block stacking, and can only be toppled by a lone capstone (toppled walls become the original owner's flats)
-- Win by road (orthogonal chain of your flats/capstones connecting your two home edges) or, if the game ends by board fill / no legal moves, by count of top flats
+- Win by road: an orthogonally connected chain of your flats/capstones (top pieces only) joining **any two opposite edges of the board** — either pair counts for either player; if the game ends by board fill / no legal moves, winner is by count of top flats
 - Diagonals are meaningless, per the book
 
 ## Running

@@ -100,12 +100,12 @@ func _draw() -> void:
 			draw_rect(rect.grow(-4), Color(0.95, 0.79, 0.28, 0.54))
 		draw_rect(rect, Color("#78583b"), false, 2.0)
 		_draw_stack(cell, rect)
-	draw_rect(Rect2(BOARD_ORIGIN - Vector2(9, 0), Vector2(9, BOARD_PIXELS)), LIGHT_COLOR)
-	draw_rect(Rect2(BOARD_ORIGIN + Vector2(BOARD_PIXELS, 0), Vector2(9, BOARD_PIXELS)), LIGHT_COLOR)
-	draw_line(BOARD_ORIGIN + Vector2(BOARD_PIXELS - 9, 0), BOARD_ORIGIN + Vector2(BOARD_PIXELS - 9, BOARD_PIXELS), Color("#78583b"), 2.0)
+	draw_rect(Rect2(BOARD_ORIGIN - Vector2(9, 0), Vector2(9, BOARD_PIXELS)), Color("#8d775c"))
+	draw_rect(Rect2(BOARD_ORIGIN + Vector2(BOARD_PIXELS, 0), Vector2(9, BOARD_PIXELS)), Color("#8d775c"))
 	draw_line(BOARD_ORIGIN, BOARD_ORIGIN + Vector2(0, BOARD_PIXELS), Color("#78583b"), 2.0)
-	draw_rect(Rect2(BOARD_ORIGIN, Vector2(BOARD_PIXELS, 9)), DARK_COLOR)
-	draw_rect(Rect2(BOARD_ORIGIN + Vector2(0, BOARD_PIXELS), Vector2(BOARD_PIXELS, 9)), DARK_COLOR)
+	draw_line(BOARD_ORIGIN + Vector2(BOARD_PIXELS - 9, 0), BOARD_ORIGIN + Vector2(BOARD_PIXELS - 9, BOARD_PIXELS), Color("#78583b"), 2.0)
+	draw_rect(Rect2(BOARD_ORIGIN, Vector2(BOARD_PIXELS, 9)), Color("#8d775c"))
+	draw_rect(Rect2(BOARD_ORIGIN + Vector2(0, BOARD_PIXELS), Vector2(BOARD_PIXELS, 9)), Color("#8d775c"))
 	if state.over:
 		draw_rect(Rect2(BOARD_ORIGIN, Vector2(BOARD_PIXELS, BOARD_PIXELS)), Color(0.10, 0.08, 0.07, 0.46))
 		var winning_cells: Array[int] = []
@@ -234,7 +234,7 @@ func _build_hud() -> void:
 		button.disabled = true
 		direction_buttons.append(button)
 	_add_label("CARRY", Vector2(665, 403), Vector2(110, 25), 15, Color("#554533"))
-	_add_label("Road goal: YOUR stones must form one unbroken chain (no diagonals) between your two home edges. Light connects the CREAM sides (left-right); Dark connects the CRIMSON sides (top-bottom).", Vector2(665, 470), Vector2(400, 80), 14, Color("#51473d"))
+	_add_label("Win: connect ANY two opposite sides with one unbroken chain of your stones (top pieces only; walls on top break a road). Either direction wins for either player.", Vector2(665, 470), Vector2(400, 80), 14, Color("#51473d"))
 	_add_label("Click an empty square to place. F/W/C select stone; arrows pick direction; Esc clears selection.", Vector2(665, 549), Vector2(390, 64), 14, Color("#51473d"))
 
 func _add_label(text: String, position: Vector2, size: Vector2, font_size: int, color: Color) -> Label:
