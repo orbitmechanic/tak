@@ -118,27 +118,72 @@ func _draw_stack(cell: int, rect: Rect2) -> void:
 		var encoded: int = state.cells[cell * TakState.MAX_STACK + layer]
 		var owner: int = int(encoded / 3)
 		var kind: int = encoded % 3
-		var shift: Vector2 = Vector2(0, -float(index) * 5.0)
-		var color: Color = LIGHT_COLOR if owner == 0 else DARK_COLOR
+		var shift: Vector2 = Vector2(0, -float(index) * 7.0)
+		var piece_center: Vector2 = center + shift
+		var base: Color = LIGHT_COLOR if owner == 0 else DARK_COLOR
 		if kind == TakState.FLAT:
-			draw_circle(center + shift + Vector2(1.5, 3), 34, Color("#4e3726", 0.28))
-			draw_circle(center + shift, 33, color.darkened(0.25))
-			draw_circle(center + shift, 29, color)
-			draw_arc(center + shift, 29, 0.0, TAU, 48, Color("#fff5dc", 0.72), 2.0)
+			var radius: float = 34.0
+			_draw_transformed_ellipse(piece_center + Vector2(5, 8), radius + 2.0, Vector2(1.0, 0.5), Color(0.20, 0.13, 0.06, 0.30))
+			draw_circle(piece_center + Vector2(0, 5), radius, base.darkened(0.55))
+			draw_circle(piece_center, radius, base)
+			var toward_light: Vector2 = Vector2(-1, -1).normalized()
+			for i: int in range(8):
+				var amount: float = float(i) / 7.0
+				draw_circle(piece_center + toward_light * float(i) * 1.2, radius - float(i) * 3.4, base.lightened(0.28).lerp(base, amount))
+			_draw_transformed_ellipse(piece_center + Vector2(-radius * 0.38, -radius * 0.42), 9.0, Vector2(1.0, 0.62), Color(1.0, 1.0, 0.95, 0.35))
+			draw_arc(piece_center, radius - 1.5, PI * 0.10, PI * 0.90, 24, base.darkened(0.5), 2.0, true)
 		elif kind == TakState.WALL:
-			var bar: Rect2 = Rect2(center + shift + Vector2(-19, -32), Vector2(38, 64))
-			draw_rect(bar, Color("#513926"))
-			draw_rect(bar.grow(-4), color)
-			draw_rect(Rect2(bar.position + Vector2(6, 3), Vector2(6, 54)), Color("#fff3d3", 0.5))
+			var face: Rect2 = Rect2(piece_center + Vector2(-19, -32), Vector2(38, 64))
+			_draw_transformed_ellipse(piece_center + Vector2(4, 6), 22.0, Vector2(1.0, 0.38), Color(0.20, 0.13, 0.06, 0.30))
+			_draw_rounded_rect(face.position + Vector2(5, 0), face.size, 8.0, base.darkened(0.55))
+			_draw_rounded_rect(face.position, face.size, 8.0, base)
+			var face_w: float = face.size.x
+			for slice: int in range(6):
+				var tx: float = (float(slice) + 0.5) / 6.0
+				var shade: float = 1.0 - 0.45 * absf(tx - 0.3)
+				var slice_color: Color = base.lightened(0.30).lerp(base.darkened(0.40), 1.0 - shade)
+				var slice_rect: Rect2 = Rect2(face.position + Vector2(face_w * float(slice) / 6.0, 8.0), Vector2(face_w / 6.0 + 0.25, face.size.y - 16.0))
+				draw_rect(slice_rect, slice_color)
+			draw_line(face.position + Vector2(3, 3), face.position + Vector2(face_w - 3, 3), Color(base.lightened(0.4), 0.5), 2.0)
 		else:
-			var square: Rect2 = Rect2(center + shift + Vector2(-29, -29), Vector2(58, 58))
-			draw_rect(square, color.darkened(0.24))
-			draw_rect(square.grow(-5), color)
-			draw_line(square.position + Vector2(9, 9), square.end - Vector2(9, 9), Color("#513926"), 5.0)
-			draw_line(Vector2(square.end.x - 9, square.position.y + 9), Vector2(square.position.x + 9, square.end.y - 9), Color("#513926"), 5.0)
+			var square: Rect2 = Rect2(piece_center + Vector2(-28, -28), Vector2(56, 56))
+			_draw_transformed_ellipse(piece_center + Vector2(4, 7), 33.0, Vector2(1.0, 0.45), Color(0.20, 0.13, 0.06, 0.30))
+			_draw_rounded_rect(square.position + Vector2(0, 5), square.size, 8.0, base.darkened(0.5))
+			_draw_rounded_rect(square.position, square.size, 8.0, base)
+			var bevel: Rect2 = square.grow(-7)
+			_draw_rounded_rect(bevel.position, bevel.size, 5.0, base.lightened(0.22))
+			draw_rect(Rect2(bevel.position + Vector2(0, bevel.size.y * 0.5), Vector2(bevel.size.x, bevel.size.y * 0.5)), base.darkened(0.12))
+			draw_rect(Rect2(bevel.position.x, bevel.end.y - 5.0, 5.0, 5.0), base)
+			draw_rect(Rect2(bevel.end.x - 5.0, bevel.end.y - 5.0, 5.0, 5.0), base)
+			draw_circle(bevel.position + Vector2(5, bevel.size.y - 5), 5.0, base.darkened(0.12))
+			draw_circle(bevel.end + Vector2(-5, -5), 5.0, base.darkened(0.12))
+			draw_line(bevel.position + Vector2(3, bevel.size.y * 0.5), Vector2(bevel.end.x - 3, bevel.position.y + bevel.size.y * 0.5), base.darkened(0.28), 1.0)
+			draw_arc(square.get_center(), 18.0, -PI * 0.95, -PI * 0.05, 24, base.lightened(0.35), 2.0, true)
+			var inset: float = 12.0
+			var x_color_light: Color = Color(base.lightened(0.30), 0.55)
+			draw_line(square.position + Vector2(inset + 1.2, inset + 1.2), square.end - Vector2(inset - 1.2, inset - 1.2), x_color_light, 6.0)
+			draw_line(Vector2(square.end.x - inset + 1.2, square.position.y + inset + 1.2), Vector2(square.position.x + inset + 1.2, square.end.y - inset + 1.2), x_color_light, 6.0)
+			draw_line(square.position + Vector2(inset, inset), square.end - Vector2(inset, inset), base.darkened(0.55), 4.5)
+			draw_line(Vector2(square.end.x - inset, square.position.y + inset), Vector2(square.position.x + inset, square.end.y - inset), base.darkened(0.55), 4.5)
 	if height > 2:
-		draw_circle(rect.position + Vector2(CELL - 15, 15), 12, Color("#30251e"))
+		var badge_center: Vector2 = rect.position + Vector2(CELL - 15, 15)
+		draw_circle(badge_center, 11, Color(0.15, 0.10, 0.06, 0.75))
+		draw_arc(badge_center, 9.5, 0.0, TAU, 24, Color("#f3e8ca", 0.75), 1.0)
 		draw_string(ThemeDB.fallback_font, rect.position + Vector2(CELL - 20, 20), str(height), HORIZONTAL_ALIGNMENT_CENTER, 10, 13, Color.WHITE)
+
+func _draw_transformed_ellipse(center: Vector2, radius: float, scale: Vector2, color: Color) -> void:
+	draw_set_transform(center, 0.0, scale)
+	draw_circle(Vector2.ZERO, radius, color)
+	draw_set_transform(Vector2.ZERO, 0.0, Vector2.ONE)
+
+func _draw_rounded_rect(position: Vector2, size: Vector2, corner_radius: float, color: Color) -> void:
+	var radius: float = minf(corner_radius, minf(size.x, size.y) * 0.5)
+	draw_rect(Rect2(position + Vector2(radius, 0), Vector2(size.x - radius * 2.0, size.y)), color)
+	draw_rect(Rect2(position + Vector2(0, radius), Vector2(size.x, size.y - radius * 2.0)), color)
+	draw_circle(position + Vector2(radius, radius), radius, color)
+	draw_circle(position + Vector2(size.x - radius, radius), radius, color)
+	draw_circle(position + Vector2(radius, size.y - radius), radius, color)
+	draw_circle(position + Vector2(size.x - radius, size.y - radius), radius, color)
 
 func _build_hud() -> void:
 	var layer: CanvasLayer = CanvasLayer.new()
