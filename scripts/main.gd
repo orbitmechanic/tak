@@ -145,6 +145,7 @@ func _build_hud() -> void:
 	add_child(layer)
 	hud = Control.new()
 	hud.set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
+	hud.mouse_filter = Control.MOUSE_FILTER_IGNORE
 	layer.add_child(hud)
 	_add_label("TAK", Vector2(58, 24), Vector2(90, 36), 28, Color("#533c2c"))
 	status_label = _add_label("", Vector2(170, 25), Vector2(480, 32), 17, Color("#33302b"))
@@ -375,7 +376,9 @@ func _update_hud() -> void:
 	elif bot_thinking:
 		status_label.text = "Bot thinking... %d playouts" % bot.playouts
 	else:
-		status_label.text = "Your turn — Light" if state.current == 0 else ("Dark's turn" if hotseat else "Dark to move")
+		var tool_names: Array[String] = ["Flat", "Wall", "Capstone"]
+		var who: String = "Your turn — Light" if state.current == 0 else ("Dark's turn" if hotseat else "Dark to move")
+		status_label.text = "%s · placing: %s" % [who, tool_names[piece_choice]]
 	undo_button.disabled = bot_thinking
 	for type: int in range(tool_buttons.size()):
 		var unavailable: bool = false
