@@ -8,6 +8,14 @@ const BOARD_PIXELS: float = CELL * 5.0
 const LIGHT_COLOR: Color = Color("#f3e8ca")
 const DARK_COLOR: Color = Color("#9d2938")
 const STONE_FLIGHT: float = 0.28
+const SFX_PLACE = preload("res://assets/sounds/place.wav")
+const SFX_MOVE = preload("res://assets/sounds/move.wav")
+const SFX_TICK = preload("res://assets/sounds/tick.wav")
+const SFX_FLATTEN = preload("res://assets/sounds/flatten.wav")
+const SFX_WIN = preload("res://assets/sounds/win.wav")
+const SFX_LOSE = preload("res://assets/sounds/lose.wav")
+const SFX_DRAW = preload("res://assets/sounds/draw.wav")
+const SFX_UNDO = preload("res://assets/sounds/undo.wav")
 const TOPPLE_STAGGER: float = 0.09
 const PLACE_POP: float = 0.22
 
@@ -23,6 +31,9 @@ var topple_options: Dictionary = {}
 var undo_states: Array[TakState] = []
 var undo_actors: Array[int] = []
 var undo_visuals: Array[Dictionary] = []
+var sfx_pool: Array[AudioStreamPlayer] = []
+var sfx_i: int = 0
+var muted: bool = false
 var anim_entries: Array[Dictionary] = []
 var anim_time: float = 0.0
 var anim_length: float = 0.0
@@ -34,7 +45,47 @@ var reserve_label: Label
 var undo_button: Button
 var tool_buttons: Array[Button] = []
 
+func _sfx(kind: String, pitch: float = 1.0) -> void:
+	if muted:
+		return
+	var stream: AudioStream = SFX_PLACE
+	var vol: float = -5.0
+	match kind:
+		"place":
+			stream = SFX_PLACE
+		"move":
+			stream = SFX_MOVE
+			vol = -6.0
+		"tick":
+			stream = SFX_TICK
+			vol = -8.0
+		"flatten":
+			stream = SFX_FLATTEN
+			vol = -3.0
+		"win":
+			stream = SFX_WIN
+			vol = -2.0
+		"lose":
+			stream = SFX_LOSE
+			vol = -2.0
+		"draw":
+			stream = SFX_DRAW
+			vol = -2.0
+		"undo":
+			stream = SFX_UNDO
+			vol = -9.0
+	var player: AudioStreamPlayer = sfx_pool[sfx_i % sfx_pool.size()]
+	sfx_i += 1
+	player.stream = stream
+	player.pitch_scale = clampf(pitch, 0.6, 1.6)
+	player.volume_db = vol
+	player.play()
+
 func _ready() -> void:
+	for i: int in range(8):
+		var player: AudioStreamPlayer = AudioStreamPlayer.new()
+		add_child(player)
+		sfx_pool.append(player)
 	bots[0].budget_seconds = 2.0
 	bots[1].budget_seconds = 2.0
 	_build_hud()
@@ -53,6 +104,10 @@ func _process(delta: float) -> void:
 			queue_redraw()
 	else:
 		anim_time += delta
+		for e: Dictionary in anim_entries:
+			if not bool(e.get("fired", false)) and anim_time >= float(e["t0"]) + float(e["dur"]):
+				e["fired"] = true
+				_sfx(str(e.get("sfx", "tick")), float(e.get("pitch", 1.0)))
 		if anim_time >= anim_length:
 			anim_entries = []
 		queue_redraw()
@@ -83,19 +138,20 @@ func _build_plan(move: Dictionary) -> Dictionary:
 	if kind == "place":
 		var cell: int = int(move["cell"])
 		var owner: int = state.current if state.opening_done[state.current] != 0 else 1 - state.current
-		entries.append({"piece": owner * 3 + int(move["piece_type"]), "from": cell, "to": cell, "t0": 0.0, "dur": PLACE_POP, "pop": true})
+		entries.append({"piece": owner * 3 + int(move["piece_type"]), "from": cell, "to": cell, "t0": 0.0, "dur": PLACE_POP, "pop": true, "sfx": "place"})
 		cells_touched.append(cell)
 	elif kind == "move":
 		var from: int = int(move["from"])
 		var dest: int = state._neighbor(from, int(move["dir"]), 1)
-		entries.append({"piece": int(state.cells[from * TakState.MAX_STACK]), "from": from, "to": dest, "t0": 0.0, "dur": STONE_FLIGHT, "pop": false})
+		var sfx_kind: String = "flatten" if state.piece_type(dest) == TakState.WALL else "move"
+		entries.append({"piece": int(state.cells[from * TakState.MAX_STACK]), "from": from, "to": dest, "t0": 0.0, "dur": STONE_FLIGHT, "pop": false, "sfx": sfx_kind})
 		cells_touched.append(from)
 		cells_touched.append(dest)
 	elif kind == "topple":
 		var origin: int = int(move["from"])
 		var landing: Array[int] = state.topple_landing_cells(origin, int(move["dir"]))
 		for i: int in range(landing.size()):
-			entries.append({"piece": int(state.cells[origin * TakState.MAX_STACK + i]), "from": origin, "to": landing[i], "t0": float(i) * TOPPLE_STAGGER, "dur": STONE_FLIGHT, "pop": false})
+			entries.append({"piece": int(state.cells[origin * TakState.MAX_STACK + i]), "from": origin, "to": landing[i], "t0": float(i) * TOPPLE_STAGGER, "dur": STONE_FLIGHT, "pop": false, "sfx": "tick", "pitch": 0.94 + 0.05 * i})
 			cells_touched.append(landing[i])
 		cells_touched.append(origin)
 	var total: float = 0.0
@@ -131,6 +187,8 @@ func _unhandled_input(event: InputEvent) -> void:
 			KEY_Z:
 				if key.ctrl_pressed:
 					_undo()
+			KEY_M:
+				muted = not muted
 	if event is InputEventMouseButton and event.pressed and event.button_index == MOUSE_BUTTON_LEFT:
 		if bot_thinking or state.over or mode == 2:
 			return
@@ -341,7 +399,7 @@ func _build_hud() -> void:
 	_add_label("Towers never move — click a blue TOPPLE ray to fell one; stones land alternating on empty or enemy tops.", Vector2(665, 341), Vector2(390, 60), 14, Color("#51473d"))
 	_add_label("Walls never move and nothing stacks on a wall or capstone; only a lone capstone may flatten an ENEMY wall.", Vector2(665, 409), Vector2(390, 60), 14, Color("#51473d"))
 	_add_label("Win: connect ANY two opposite sides with one chain. Either direction wins for either player.", Vector2(665, 477), Vector2(400, 60), 14, Color("#51473d"))
-	_add_label("The pulsing orange ring marks the cells of the last move. F/W/C select stone; Esc clears selection.", Vector2(665, 541), Vector2(390, 48), 14, Color("#51473d"))
+	_add_label("Pulsing orange ring marks the last move. F/W/C select stone; Esc clears selection; M mutes sound.", Vector2(665, 541), Vector2(390, 48), 14, Color("#51473d"))
 
 func _add_label(text: String, position: Vector2, size: Vector2, font_size: int, color: Color) -> Label:
 	var label: Label = Label.new()
@@ -436,8 +494,18 @@ func _commit_move(move: Dictionary) -> void:
 	undo_actors.append(state.current)
 	undo_visuals.append({"indicator": indicator_cells.duplicate(), "entries": anim_entries.duplicate(true), "time": anim_time, "length": anim_length})
 	var plan: Dictionary = _build_plan(move)
+	var was_place: bool = str(move.get("kind", "")) == "place"
 	state.apply_move(move)
+	if was_place:
+		_sfx("place", randf_range(0.97, 1.04))
 	_start_animation(plan)
+	if state.over:
+		if state.winner == 2:
+			_sfx("draw")
+		elif mode == 0 and state.winner == 1:
+			_sfx("lose")
+		else:
+			_sfx("win")
 	_clear_selection()
 	queue_redraw()
 	_start_bot_if_needed()
@@ -454,6 +522,7 @@ func _start_bot_if_needed() -> void:
 func _undo() -> void:
 	if bot_thinking or undo_states.is_empty():
 		return
+	_sfx("undo")
 	var last_actor: int = undo_actors.pop_back()
 	state = undo_states.pop_back()
 	var visual: Dictionary = undo_visuals.pop_back()
