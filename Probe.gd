@@ -513,7 +513,12 @@ func _test_hint_and_courtly() -> void:
 	game.mode = 2
 	game._new_game()
 	_check("new game restarts bots in spectate mode", game.bot_thinking, "bots did not start")
-	game._process(0.01)
+	game.bot_thinking = false
+	game.state.over = true
+	game.state.winner = 0
+	game.spectate_wait = 5.0
+	game._process(5.4)
+	_check("spectate auto-restarts 5s after a win", not game.state.over and game.bot_thinking, "no auto-restart")
 	game.bot_thinking = false
 	game._request_hint(false)
 	var loops: int = 0

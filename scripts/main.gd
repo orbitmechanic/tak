@@ -64,6 +64,7 @@ var hint_time: float = 0.0
 var hint_length: float = 0.0
 var hint_cells: Array[int] = []
 var court_cells: Array[int] = []
+var spectate_wait: float = 5.0
 var court_label: Label
 var hint_def_button: Button
 var hint_off_button: Button
@@ -163,6 +164,12 @@ func _bot_should_act() -> bool:
 func _process(delta: float) -> void:
 	clock += delta
 	_process_hint(delta)
+	if mode == 2 and state.over and not bot_thinking:
+		spectate_wait -= delta
+		status_label.text = "New game in %d..." % int(ceilf(spectate_wait))
+		if spectate_wait <= 0.0:
+			_new_game()
+			return
 	if hint_state != HINT_IDLE or not court_cells.is_empty():
 		queue_redraw()
 	if anim_entries.is_empty():
@@ -678,18 +685,18 @@ func _build_hud() -> void:
 	house_list_label = _add_label("", Vector2(665, 396), Vector2(425, 40), 13, "heading")
 	house_note_label = _add_label("Rules marked * are house rules (House Rules button).", Vector2(665, 428), Vector2(425, 30), 12, "help")
 	house_note_label.visible = false
+	hint_off_button = _add_button("Hint Off", Vector2(905, 604), Vector2(88, 36))
+	hint_off_button.pressed.connect(_request_hint.bind(false))
+	hint_def_button = _add_button("Hint Def", Vector2(1001, 604), Vector2(88, 36))
+	hint_def_button.pressed.connect(_request_hint.bind(true))
 	var house: Button = _add_button("House Rules", Vector2(665, 646), Vector2(104, 36))
 	house.pressed.connect(_toggle_rule_popup)
 	var brains: Button = _add_button("Bot Brains", Vector2(775, 646), Vector2(96, 36))
 	brains.pressed.connect(_toggle_brain_popup)
-	hint_off_button = _add_button("Hint Off", Vector2(877, 646), Vector2(78, 36))
-	hint_off_button.pressed.connect(_request_hint.bind(false))
-	hint_def_button = _add_button("Hint Def", Vector2(961, 646), Vector2(78, 36))
-	hint_def_button.pressed.connect(_request_hint.bind(true))
-	var dark: Button = _add_button("Dark", Vector2(665, 690), Vector2(58, 34))
+	var dark: Button = _add_button("Dark", Vector2(877, 646), Vector2(58, 36))
 	dark.name = "DarkButton"
 	dark.pressed.connect(_toggle_dark)
-	court_label = _add_label("", Vector2(731, 694), Vector2(310, 30), 12, "heading")
+	court_label = _add_label("", Vector2(665, 690), Vector2(424, 30), 12, "heading")
 	court_label.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
 	for wrap_label: Label in [move_label, topple_label, wall_label, win_label, hint_label, house_list_label, house_note_label]:
 		wrap_label.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
@@ -1243,6 +1250,7 @@ func _new_game() -> void:
 	indicator_cells = []
 	bot_thinking = false
 	active_bot = -1
+	spectate_wait = 5.0
 	_clear_selection()
 	_clear_hint()
 	court_cells = []
