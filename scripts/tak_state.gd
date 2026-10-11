@@ -179,7 +179,7 @@ func _stone_move_legal(origin: int, direction: int) -> bool:
 	if top == CAPSTONE:
 		return false
 	if top == WALL:
-		return stone_type == CAPSTONE
+		return stone_type == CAPSTONE and piece_owner(destination) != current
 	if top == FLAT:
 		return piece_owner(destination) != current
 	return true

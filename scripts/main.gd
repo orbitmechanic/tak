@@ -232,7 +232,7 @@ func _build_hud() -> void:
 	_add_label("ACTIONS", Vector2(665, 263), Vector2(150, 25), 15, Color("#554533"))
 	_add_label("Single stones move one space onto empty ground or an enemy stone.", Vector2(665, 291), Vector2(390, 48), 14, Color("#51473d"))
 	_add_label("Towers never move — click a blue TOPPLE ray to fell one; stones land alternating on empty or enemy tops.", Vector2(665, 341), Vector2(390, 60), 14, Color("#51473d"))
-	_add_label("Walls never move and nothing stacks on a wall or capstone; only a lone capstone may flatten a wall.", Vector2(665, 409), Vector2(390, 60), 14, Color("#51473d"))
+	_add_label("Walls never move and nothing stacks on a wall or capstone; only a lone capstone may flatten an ENEMY wall.", Vector2(665, 409), Vector2(390, 60), 14, Color("#51473d"))
 	_add_label("Win: connect ANY two opposite sides with one chain. Either direction wins for either player.", Vector2(665, 477), Vector2(400, 60), 14, Color("#51473d"))
 	_add_label("Click an empty square to place. F/W/C select stone; Esc clears selection.", Vector2(665, 541), Vector2(390, 48), 14, Color("#51473d"))
 

@@ -11,7 +11,7 @@ A two-player digital implementation of [Tak](https://en.wikipedia.org/wiki/Tak_(
 - **Single stones** move one space orthogonally onto empty ground or an enemy-topped cell
 - **Towers (2+) never move** — they may only be *toppled*: the whole tower lays down in a straight line, bottom-to-top, one stone per cell, in any direction with room; falling stones land on empty ground or enemy tops, walls in a tower re-stand and need empty cells
 - **Tower colors strictly alternate** — you can never stack onto your own top piece
-- Walls never move; nothing stacks on a wall or a capstone; only a lone capstone may enter a wall-topped cell, flattening the wall (it stays its original owner's, now a flat)
+- Walls never move; nothing stacks on a wall or a capstone; only a lone capstone may enter an *enemy* wall-topped cell, flattening it (the flattened stone stays the original owner's; a capstone may never enter a wall of its own color)
 - Win by road: an orthogonally connected chain of your flats/capstones (top pieces only) joining **any two opposite edges of the board** — either pair counts for either player; if the game ends by board fill / no legal moves, winner is by count of top flats
 - No captures; no diagonals
 

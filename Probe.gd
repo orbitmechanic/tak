@@ -62,7 +62,7 @@ func _invariants_hold(state: TakState) -> String:
 			if layer < height - 1:
 				if type == TakState.WALL or type == TakState.CAPSTONE:
 					return "buried blocker at cell %d layer %d" % [cell, layer]
-				if owner == state.piece_owner(cell, layer + 1) and state.piece_type(cell, layer + 1) != TakState.CAPSTONE:
+				if owner == state.piece_owner(cell, layer + 1):
 					return "same-color adjacency at cell %d layer %d" % [cell, layer]
 			elif type == TakState.WALL and height > 1:
 				return "wall above others at cell %d" % cell
@@ -147,6 +147,11 @@ func _test_wall_rules() -> void:
 	cap.apply_move(move)
 	var toppled: bool = int(cap.heights[11]) == 2 and cap.piece_type(11, 0) == TakState.FLAT and cap.piece_owner(11, 0) == 1 and cap.piece_type(11, 1) == TakState.CAPSTONE
 	_check("lone capstone flattens enemy wall and rests on it", legal and toppled, "capstone wall entry wrong")
+	var own: TakState = _normal_state()
+	own.current = 0
+	_put(own, 10, 0, TakState.CAPSTONE)
+	_put(own, 11, 0, TakState.WALL)
+	_check("capstone may not flatten its owner's wall", not own.is_legal(_move(10, 0)), "capstone entered own-color wall")
 	var own_wall: TakState = _normal_state()
 	own_wall.current = 0
 	_put(own_wall, 12, 0, TakState.WALL)
