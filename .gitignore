@@ -3,3 +3,6 @@
 
 # OS / editor
 .DS_Store
+
+# web export output (published via gh-pages branch)
+web/
