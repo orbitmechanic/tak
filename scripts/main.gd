@@ -56,6 +56,21 @@ var bots: Array[TakBrains] = [TakBrains.new(), TakBrains.new()]
 var current_brain: int = 0
 var brain_popup: Control
 var brain_radios: Array[CheckButton] = []
+var hint_inst: TakBrains = null
+var hint_state: int = 0
+var hint_flash: Dictionary = {}
+var hint_entries: Array[Dictionary] = []
+var hint_time: float = 0.0
+var hint_length: float = 0.0
+var hint_cells: Array[int] = []
+var court_cells: Array[int] = []
+var court_label: Label
+var hint_def_button: Button
+var hint_off_button: Button
+const HINT_IDLE: int = 0
+const HINT_COMPUTE: int = 1
+const HINT_FLASH: int = 2
+const HINT_SHOW: int = 3
 var mode: int = 0
 var bot_thinking: bool = false
 var active_bot: int = -1
@@ -147,6 +162,9 @@ func _bot_should_act() -> bool:
 
 func _process(delta: float) -> void:
 	clock += delta
+	_process_hint(delta)
+	if hint_state != HINT_IDLE or not court_cells.is_empty():
+		queue_redraw()
 	if anim_entries.is_empty():
 		if not indicator_cells.is_empty():
 			queue_redraw()
@@ -192,14 +210,22 @@ func _build_plan(move: Dictionary) -> Dictionary:
 		var from: int = int(move["from"])
 		var dest: int = state._neighbor(from, int(move["dir"]), 1)
 		var sfx_kind: String = "flatten" if state.piece_type(dest) == TakState.WALL else "move"
-		entries.append({"piece": int(state.cells[from * TakState.MAX_STACK]), "from": from, "to": dest, "t0": 0.0, "dur": STONE_FLIGHT, "pop": false, "sfx": sfx_kind})
+		entries.append({"piece": int(state.cells[from * TakState.MAX_STACK]), "from": from, "to": dest, "t0": 0.0, "dur": STONE_FLIGHT, "pop": false, "sfx": sfx_kind, "layer": 0})
 		cells_touched.append(from)
 		cells_touched.append(dest)
+	elif kind == "peel":
+		var origin_p: int = int(move["from"])
+		var dest_p: int = state.peel_landing(origin_p, int(move["dir"]))
+		var layer_p: int = int(state.heights[origin_p]) - 1
+		var sfx_p: String = "flatten" if state.piece_type(dest_p) == TakState.WALL else "move"
+		entries.append({"piece": int(state.cells[origin_p * TakState.MAX_STACK + layer_p]), "from": origin_p, "to": dest_p, "t0": 0.0, "dur": STONE_FLIGHT, "pop": false, "sfx": sfx_p, "layer": layer_p})
+		cells_touched.append(origin_p)
+		cells_touched.append(dest_p)
 	elif kind == "topple":
 		var origin: int = int(move["from"])
 		var landing: Array[int] = state.topple_landing_cells(origin, int(move["dir"]))
 		for i: int in range(landing.size()):
-			entries.append({"piece": int(state.cells[origin * TakState.MAX_STACK + i]), "from": origin, "to": landing[i], "t0": float(i) * TOPPLE_STAGGER, "dur": STONE_FLIGHT, "pop": false, "sfx": "tick", "pitch": 0.94 + 0.05 * i})
+			entries.append({"piece": int(state.cells[origin * TakState.MAX_STACK + i]), "from": origin, "to": landing[i], "t0": float(i) * TOPPLE_STAGGER, "dur": STONE_FLIGHT, "pop": false, "sfx": "tick", "pitch": 0.94 + 0.05 * i, "layer": i})
 			cells_touched.append(landing[i])
 		cells_touched.append(origin)
 	var total: float = 0.0
@@ -276,6 +302,10 @@ func _draw() -> void:
 			draw_rect(rect.grow(-7), LEGAL_HI)
 			if selected_from >= 0 and state.piece_type(cell) == TakState.WALL and int(state.heights[selected_from]) == 1 and state.piece_type(selected_from) == TakState.CAPSTONE:
 				draw_string(ThemeDB.fallback_font, rect.position + Vector2(22, CELL - 9), "FLATTEN", HORIZONTAL_ALIGNMENT_LEFT, 72, 12, TEXT_INK)
+		if cell in court_cells:
+			draw_rect(rect.grow(-5), Color(0.16, 0.50, 0.46, 0.22 + 0.16 * (0.5 + 0.5 * sin(clock * 3.0))))
+		if cell in hint_cells:
+			draw_rect(rect.grow(-7), Color(0.23, 0.56, 0.29, 0.36))
 		if topple_options.has(cell):
 			draw_rect(rect.grow(-7), TOPPLE_HI)
 			if bool(topple_options[cell]["last"]):
@@ -315,6 +345,31 @@ func _draw() -> void:
 			_draw_piece_at(int(e["piece"]), pos, scale, 1.0 - raw)
 	var band_lr: Color = TEAL if rules[2] else LIGHT_COLOR
 	var band_tb: Color = TEAL
+	if hint_state == HINT_FLASH:
+		var frect: Rect2 = Rect2(BOARD_ORIGIN + Vector2((int(hint_flash["cell"]) % 5) * CELL, int(int(hint_flash["cell"]) / 5) * CELL), Vector2(CELL, CELL))
+		var t: float = hint_time
+		var falpha: float = (0.5 + 0.4 * sin(t * 9.0)) * clampf((3.2 - t) / 0.5, 0.0, 1.0)
+		var fcolor: Color = LIGHT_COLOR if int(hint_flash["owner"]) == 0 else DARK_COLOR
+		var fc: Vector2 = frect.get_center()
+		if int(hint_flash["type"]) == TakState.FLAT:
+			draw_arc(fc, 36.0, 0.0, TAU, 48, Color(fcolor, falpha), 3.5, true)
+			draw_arc(fc, 30.0, 0.0, TAU, 48, Color(GOLD, falpha * 0.8), 1.5, true)
+		elif int(hint_flash["type"]) == TakState.WALL:
+			draw_rect(Rect2(fc + Vector2(-20, -33), Vector2(40, 66)), Color(fcolor, falpha), false, 3.5)
+			draw_rect(Rect2(fc + Vector2(-15, -28), Vector2(30, 56)), Color(GOLD, falpha * 0.8), false, 1.5)
+		else:
+			draw_rect(Rect2(fc + Vector2(-29, -29), Vector2(58, 58)), Color(fcolor, falpha), false, 3.5)
+			draw_line(fc + Vector2(-16, -16), fc + Vector2(16, 16), Color(fcolor, falpha), 2.5)
+			draw_line(fc + Vector2(16, -16), fc + Vector2(-16, 16), Color(fcolor, falpha), 2.5)
+	if hint_state == HINT_SHOW:
+		for e: Dictionary in hint_entries:
+			var raw: float = (hint_time - float(e["t0"])) / float(e["dur"])
+			if raw <= 0.0 or raw >= 1.0:
+				continue
+			var ease_t: float = 1.0 - pow(1.0 - raw, 2.0)
+			var pos: Vector2 = _cell_center(int(e["from"])).lerp(_cell_center(int(e["to"])), ease_t)
+			pos.y -= sin(raw * PI) * 20.0
+			_draw_piece_at(int(e["piece"]), pos, 1.0 + 0.14 * sin(raw * PI), 1.0 - raw)
 	draw_rect(Rect2(BOARD_ORIGIN - Vector2(9, 0), Vector2(9, BOARD_PIXELS)), band_lr)
 	draw_rect(Rect2(BOARD_ORIGIN + Vector2(BOARD_PIXELS, 0), Vector2(9, BOARD_PIXELS)), band_lr)
 	draw_rect(Rect2(BOARD_ORIGIN, Vector2(BOARD_PIXELS, 9)), band_tb)
@@ -409,6 +464,26 @@ func _draw_stack(cell: int, rect: Rect2) -> void:
 	if height == 0:
 		return
 	var center: Vector2 = rect.get_center()
+	if hint_state == HINT_SHOW:
+		var hidden: Array[bool] = []
+		hidden.resize(height)
+		for e: Dictionary in hint_entries:
+			if int(e["from"]) == cell and hint_time >= float(e["t0"]) and hint_time < float(e["t0"]) + float(e["dur"]):
+				var hl: int = int(e.get("layer", height - 1))
+				if hl >= 0 and hl < height:
+					hidden[hl] = true
+		var vis: Array[int] = []
+		for l: int in range(height):
+			if not hidden[l]:
+				vis.append(l)
+		var shown: int = mini(vis.size(), 5)
+		for index: int in range(shown):
+			var layer: int = vis[vis.size() - shown + index]
+			var encoded: int = int(state.cells[cell * TakState.MAX_STACK + layer])
+			_draw_piece_at(encoded, center + Vector2(0, -float(index) * 7.0), 1.0, 0.0)
+		if height > 2:
+			_draw_height_badge(cell, rect)
+		return
 	var unarrived: int = _unarrived_at(cell)
 	var draw_count: int = maxi(0, height - unarrived)
 	var visible: int = mini(draw_count, 5)
@@ -418,10 +493,13 @@ func _draw_stack(cell: int, rect: Rect2) -> void:
 		var shift: Vector2 = Vector2(0, -float(index) * 7.0)
 		_draw_piece_at(encoded, center + shift, 1.0, 0.0)
 	if height > 2:
-		var badge_center: Vector2 = rect.position + Vector2(CELL - 15, 15)
-		draw_circle(badge_center, 11, BADGE_BG)
-		draw_arc(badge_center, 9.5, 0.0, TAU, 24, Color(BADGE_RING, 0.75), 1.0)
-		draw_string(ThemeDB.fallback_font, rect.position + Vector2(CELL - 20, 20), str(height), HORIZONTAL_ALIGNMENT_CENTER, 10, 13, LABEL_BRIGHT)
+		_draw_height_badge(cell, rect)
+
+func _draw_height_badge(_cell: int, rect: Rect2) -> void:
+	var badge_center: Vector2 = rect.position + Vector2(CELL - 15, 15)
+	draw_circle(badge_center, 11, BADGE_BG)
+	draw_arc(badge_center, 9.5, 0.0, TAU, 24, Color(BADGE_RING, 0.75), 1.0)
+	draw_string(ThemeDB.fallback_font, rect.position + Vector2(CELL - 20, 20), str(int(state.heights[_cell])), HORIZONTAL_ALIGNMENT_CENTER, 10, 13, LABEL_BRIGHT)
 
 func _draw_piece_at(encoded: int, center: Vector2, scale: float, shadow_depth: float) -> void:
 	_piece_scale = scale
@@ -600,13 +678,19 @@ func _build_hud() -> void:
 	house_list_label = _add_label("", Vector2(665, 396), Vector2(425, 40), 13, "heading")
 	house_note_label = _add_label("Rules marked * are house rules (House Rules button).", Vector2(665, 428), Vector2(425, 30), 12, "help")
 	house_note_label.visible = false
-	var house: Button = _add_button("House Rules", Vector2(665, 646), Vector2(110, 36))
+	var house: Button = _add_button("House Rules", Vector2(665, 646), Vector2(104, 36))
 	house.pressed.connect(_toggle_rule_popup)
-	var brains: Button = _add_button("Bot Brains", Vector2(785, 646), Vector2(100, 36))
+	var brains: Button = _add_button("Bot Brains", Vector2(775, 646), Vector2(96, 36))
 	brains.pressed.connect(_toggle_brain_popup)
-	var dark: Button = _add_button("Dark", Vector2(895, 646), Vector2(64, 36))
+	hint_off_button = _add_button("Hint Off", Vector2(877, 646), Vector2(78, 36))
+	hint_off_button.pressed.connect(_request_hint.bind(false))
+	hint_def_button = _add_button("Hint Def", Vector2(961, 646), Vector2(78, 36))
+	hint_def_button.pressed.connect(_request_hint.bind(true))
+	var dark: Button = _add_button("Dark", Vector2(665, 690), Vector2(58, 34))
 	dark.name = "DarkButton"
 	dark.pressed.connect(_toggle_dark)
+	court_label = _add_label("", Vector2(731, 694), Vector2(310, 30), 12, "heading")
+	court_label.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
 	for wrap_label: Label in [move_label, topple_label, wall_label, win_label, hint_label, house_list_label, house_note_label]:
 		wrap_label.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
 	_build_rule_popup()
@@ -687,6 +771,87 @@ func _build_rule_popup() -> void:
 	close.size = Vector2(80, 32)
 	close.pressed.connect(func() -> void: rule_popup.visible = false)
 	rule_popup.add_child(close)
+
+func _request_hint(defensive: bool) -> void:
+	if mode == 2 or bot_thinking or state.over:
+		return
+	_clear_hint()
+	hint_inst = TakBrains.new()
+	hint_inst.set_brain(TakBrains.DEFENSIVE if defensive else TakBrains.OFFENSIVE)
+	hint_inst.budget_seconds = 0.4
+	hint_inst.start_thinking(state.clone())
+	hint_state = HINT_COMPUTE
+	hint_def_button.disabled = true
+	hint_off_button.disabled = true
+
+func _clear_hint() -> void:
+	hint_inst = null
+	hint_state = HINT_IDLE
+	hint_flash = {}
+	hint_entries = []
+	hint_cells = []
+	hint_time = 0.0
+	queue_redraw()
+	if is_instance_valid(hint_def_button):
+		hint_def_button.disabled = false
+	if is_instance_valid(hint_off_button):
+		hint_off_button.disabled = false
+
+func _process_hint(delta: float) -> void:
+	match hint_state:
+		HINT_COMPUTE:
+			hint_inst.tick()
+			if hint_inst.is_done():
+				var suggestion: Dictionary = hint_inst.get_move()
+				hint_def_button.disabled = false
+				hint_off_button.disabled = false
+				hint_inst = null
+				_present_suggestion(suggestion)
+		HINT_FLASH:
+			hint_time += delta
+			if hint_time >= 3.2:
+				_clear_hint()
+		HINT_SHOW:
+			hint_time += delta
+			if hint_time >= hint_length:
+				_clear_hint()
+		_:
+			pass
+
+func _present_suggestion(suggestion: Dictionary) -> void:
+	if suggestion.is_empty() or not state.is_legal(suggestion):
+		hint_state = HINT_IDLE
+		return
+	var kind: String = str(suggestion.get("kind", ""))
+	if kind == "place":
+		hint_flash = {"cell": int(suggestion["cell"]), "type": int(suggestion["piece_type"]), "owner": state.current}
+		hint_state = HINT_FLASH
+		hint_time = 0.0
+		return
+	var plan: Dictionary = _build_plan(suggestion)
+	var entries: Array[Dictionary] = []
+	var stretch: float = hint_stretch(plan)
+	for e: Dictionary in plan["entries"]:
+		var first: Dictionary = e.duplicate(true)
+		first["t0"] = float(e["t0"]) * stretch
+		first["dur"] = float(e["dur"]) * stretch
+		var second: Dictionary = e.duplicate(true)
+		second["t0"] = float(e["t0"]) * stretch + float(plan["length"]) * stretch + 0.3
+		second["dur"] = float(e["dur"]) * stretch
+		entries.append(first)
+		entries.append(second)
+	var cells: Array[int] = []
+	for e: Dictionary in entries:
+		cells.append(int(e["from"]))
+		cells.append(int(e["to"]))
+	hint_entries = entries
+	hint_cells = cells
+	hint_length = float(plan["length"]) * stretch * 2.0 + 0.4
+	hint_state = HINT_SHOW
+	hint_time = 0.0
+
+func hint_stretch(plan: Dictionary) -> float:
+	return 1.0 if float(plan["length"]) <= 0.6 else 0.6 / float(plan["length"])
 
 func _toggle_rule_popup() -> void:
 	rule_popup.visible = not rule_popup.visible
@@ -980,16 +1145,61 @@ func _commit_move(move: Dictionary) -> void:
 	if was_place:
 		_sfx("place", randf_range(0.97, 1.04))
 	_start_animation(plan)
+	_clear_hint()
+	court_cells = []
+	court_label.text = ""
 	if state.over:
 		if state.winner == 2:
 			_sfx("draw")
 		elif mode == 0 and state.winner == 1:
 			_sfx("lose")
+			_courtly_review()
 		else:
 			_sfx("win")
+			if mode == 1:
+				_courtly_review()
 	_clear_selection()
 	queue_redraw()
 	_start_bot_if_needed()
+
+func _courtly_review() -> void:
+	if mode == 2:
+		return
+	var loser: int = 1 - state.winner
+	var snapshot_index: int = -1
+	for i: int in range(undo_actors.size() - 1, -1, -1):
+		if undo_actors[i] == loser:
+			snapshot_index = i
+			break
+	if snapshot_index < 0:
+		return
+	var pre: TakState = undo_states[snapshot_index].clone()
+	pre.over = false
+	pre.winner = -1
+	var reviewer: TakBrains = TakBrains.new()
+	var blocks: Array[Dictionary] = reviewer.blocking_moves(pre)
+	if blocks.is_empty():
+		return
+	var seen: Dictionary = {}
+	for mv: Dictionary in blocks:
+		var kind: String = str(mv.get("kind", ""))
+		var add: Array[int] = []
+		if kind == "place":
+			add = [int(mv["cell"])]
+		elif kind == "move":
+			add = [int(mv["from"]), pre._neighbor(int(mv["from"]), int(mv["dir"]), 1)]
+		elif kind == "peel":
+			add = [int(mv["from"]), pre.peel_landing(int(mv["from"]), int(mv["dir"]))]
+		elif kind == "topple":
+			add.append(int(mv["from"]))
+			add.append_array(pre.topple_landing_cells(int(mv["from"]), int(mv["dir"])))
+		for c: int in add:
+			if c >= 0 and c < 25:
+				seen[c] = true
+	court_cells = []
+	for key: int in seen.keys():
+		court_cells.append(key)
+	court_label.text = "Courtly review: %d blocking move(s) remain — teal cells. Undo to replay." % blocks.size()
 
 func _start_bot_if_needed() -> void:
 	if not bot_thinking and _bot_should_act():
@@ -1006,6 +1216,9 @@ func _undo() -> void:
 	_sfx("undo")
 	var last_actor: int = undo_actors.pop_back()
 	state = undo_states.pop_back()
+	_clear_hint()
+	court_cells = []
+	court_label.text = ""
 	var visual: Dictionary = undo_visuals.pop_back()
 	indicator_cells = visual["indicator"]
 	anim_entries = visual["entries"]
@@ -1031,8 +1244,12 @@ func _new_game() -> void:
 	bot_thinking = false
 	active_bot = -1
 	_clear_selection()
+	_clear_hint()
+	court_cells = []
+	court_label.text = ""
 	queue_redraw()
 	_update_hud()
+	_start_bot_if_needed()
 
 func _clear_selection() -> void:
 	selected_from = -1

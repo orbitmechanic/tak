@@ -259,6 +259,39 @@ func _road_score(st: TakState) -> float:
 				score += sign * value
 	return score
 
+func blocking_moves(state: TakState) -> Array[Dictionary]:
+	var defender: int = state.current
+	var attacker: int = 1 - defender
+	var threats: Array[Dictionary] = []
+	var a_state: TakState = state.clone()
+	a_state.current = attacker
+	for m: Dictionary in a_state.legal_moves():
+		var sim: TakState = a_state.clone()
+		sim.apply_move(m)
+		if sim.over and sim.winner == attacker:
+			threats.append(m)
+			if threats.size() >= 12:
+				break
+	var blocks: Array[Dictionary] = []
+	if threats.is_empty():
+		return blocks
+	for mv: Dictionary in state.legal_moves():
+		var after: TakState = state.clone()
+		after.apply_move(mv)
+		var still: bool = false
+		for t: Dictionary in threats:
+			var t2: TakState = after.clone()
+			if t2.current == attacker and t2.is_legal(t):
+				t2.apply_move(t)
+				if t2.over and t2.winner == attacker:
+					still = true
+					break
+		if not still:
+			blocks.append(mv)
+			if blocks.size() >= 10:
+				break
+	return blocks
+
 func is_done() -> bool:
 	return _done
 

@@ -26,6 +26,7 @@ func _initialize() -> void:
 	_test_rule_wall_move()
 	_test_stalemate_guard()
 	_test_brains()
+	await _test_hint_and_courtly()
 	_test_mcts()
 	print("RESULT=%d_passed,%d_failed" % [passed, failed])
 	quit(0 if failed == 0 else 1)
@@ -504,6 +505,74 @@ func _test_brains() -> void:
 	while not rbrain.is_done():
 		rbrain.tick()
 	_check("Ralph brain delegates to MCTS legally", open_state.is_legal(rbrain.get_move()) and rbrain.playouts > 50, "ralph brain broken")
+
+func _test_hint_and_courtly() -> void:
+	var game = load("res://scenes/Main.tscn").instantiate()
+	root.add_child(game)
+	await process_frame
+	game.mode = 2
+	game._new_game()
+	_check("new game restarts bots in spectate mode", game.bot_thinking, "bots did not start")
+	game._process(0.01)
+	game.bot_thinking = false
+	game._request_hint(false)
+	var loops: int = 0
+	while game.hint_state == game.HINT_COMPUTE and loops < 2000:
+		game._process_hint(0.02)
+		loops += 1
+	var resolved: bool = game.hint_state in [game.HINT_FLASH, game.HINT_SHOW, game.HINT_IDLE]
+	_check("hint computes without hanging", resolved, "stuck in compute")
+	var before_turn: int = game.state.turn_number
+	var total: int = 0
+	for h: int in game.state.heights:
+		total += int(h)
+	loops = 0
+	while game.hint_state != game.HINT_IDLE and loops < 800:
+		game._process_hint(0.05)
+		loops += 1
+	var t2: int = 0
+	for h: int in game.state.heights:
+		t2 += int(h)
+	_check("hint performs then clears without playing", game.hint_state == game.HINT_IDLE and game.state.turn_number == before_turn and t2 == total, "hint disturbed the game")
+	game._request_hint(true)
+	game._request_hint(false)
+	loops = 0
+	while game.hint_state == game.HINT_COMPUTE and loops < 3000:
+		game._process_hint(0.02)
+		loops += 1
+	_check("re-requesting hints mid-compute is safe", game.hint_state != game.HINT_COMPUTE, "double press hung")
+	game._clear_hint()
+	# courtly review scenario
+	var g2 = load("res://scenes/Main.tscn").instantiate()
+	root.add_child(g2)
+	await process_frame
+	g2.mode = 0
+	var st: TakState = g2.state
+	st.opening_done = PackedByteArray([1, 1])
+	for cell: int in [1, 6, 11, 16, 21]:
+		_put(st, cell, 1, TakState.FLAT)
+	_put(st, 13, 0, TakState.FLAT)
+	st.current = 1
+	st.over = true
+	st.winner = 1
+	st.turn_number = 20
+	var pre: TakState = st.clone()
+	pre.over = false
+	pre.winner = -1
+	pre.current = 0
+	pre.heights[21] = 0
+	pre.cells[21 * TakState.MAX_STACK] = 0
+	pre._occupied_count -= 1
+	pre._mark_road_masks_dirty()
+	g2.undo_states = [pre, st.clone()]
+	g2.undo_actors = [0, 1]
+	g2._courtly_review()
+	var has_block: bool = 21 in g2.court_cells
+	g2._undo()
+	_check("courtly review highlights the missed block", has_block and not g2.court_label.text.is_empty(), "cells=%s" % str(g2.court_cells))
+	_check("undo clears the review and resumes play", g2.court_cells.is_empty() and not g2.state.over, "undo did not restore play")
+	g2.queue_free()
+	game.queue_free()
 
 func _test_mcts() -> void:
 	var opening: TakState = TakState.new()
