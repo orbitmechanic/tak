@@ -8,12 +8,12 @@ A two-player digital implementation of [Tak](https://en.wikipedia.org/wiki/Tak_(
 
 - Each player: 21 flat stones + 1 capstone
 - Opening moves: each player places one of the *opponent's* flats
-- Place or move per turn; stack carry limit of 5 with mandatory drop in every cell entered
-- No piece can be moved onto a wall, so walls are only ever the *top* of a tower, never buried inside one; a wall-topped cell can only be entered by a lone capstone, which flattens the wall (it stays the original owner's, now a flat) and rests on top of it
-- Capstones block stacking entirely: **nothing may be moved onto or passed over a capstone** (it can never be buried), and nothing may be stacked on a capstone — which is why each player gets exactly one; a capstone always remains a visible road piece while it is the top of its cell
-- **Tower toppling** (the novel's rule): instead of carrying, any tower whose top piece is yours (any height ≥ 2, any top piece type) may be felled in a straight line — one stone per cell, bottom-to-top — in any direction that has enough room on the board; a direction is blocked if any landing cell is off-board, wall-topped, or would need a falling wall to land on stones
+- **Single stones** move one space orthogonally onto empty ground or an enemy-topped cell
+- **Towers (2+) never move** — they may only be *toppled*: the whole tower lays down in a straight line, bottom-to-top, one stone per cell, in any direction with room; falling stones land on empty ground or enemy tops, walls in a tower re-stand and need empty cells
+- **Tower colors strictly alternate** — you can never stack onto your own top piece
+- Walls never move; nothing stacks on a wall or a capstone; only a lone capstone may enter a wall-topped cell, flattening the wall (it stays its original owner's, now a flat)
 - Win by road: an orthogonally connected chain of your flats/capstones (top pieces only) joining **any two opposite edges of the board** — either pair counts for either player; if the game ends by board fill / no legal moves, winner is by count of top flats
-- Diagonals are meaningless, per the book
+- No captures; no diagonals
 
 ## Running
 
@@ -26,9 +26,10 @@ godot --path .
 ## Controls
 
 - Click an empty square to place; **F / W / C** (or the Place Tool buttons) select flat / wall / capstone
-- Click one of your stacks → **click any cell of a highlighted TOPPLE ray** (blue cells, orange-capped) to fell the tower that way, bottom-to-top; or press a **direction** button (or arrow key) first and then a green **destination** to make a carry-move instead
-- **Undo** (or Ctrl+Z), **New Game**, and a **Human vs Bot / Hotseat** switch live in the top bar
-- A lone capstone moving onto a wall toppling it is hinted with `TOPPLE`
+- Click one of your single stones → green neighbors appear → click one to move it
+- Click one of your towers → blue TOPPLE rays appear → click any ray cell to fell the tower (orange-capped cell marks the far end of each ray)
+- **Undo** (or Ctrl+Z), **New Game**, and a **Human vs Bot / Hotseat / Bot vs Bot** switch live in the top bar — Bot vs Bot lets you spectate two MCTS players
+- Entering a wall with a lone capstone is labeled `FLATTEN`
 
 ## The AI opponent
 

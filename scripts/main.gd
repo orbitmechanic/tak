@@ -9,13 +9,12 @@ const LIGHT_COLOR: Color = Color("#f3e8ca")
 const DARK_COLOR: Color = Color("#9d2938")
 
 var state: TakState = TakState.new()
-var bot: MctsBot = MctsBot.new()
-var hotseat: bool = false
+var bots: Array[MctsBot] = [MctsBot.new(), MctsBot.new()]
+var mode: int = 0
 var bot_thinking: bool = false
+var active_bot: int = -1
 var piece_choice: int = TakState.FLAT
 var selected_from: int = -1
-var selected_carry: int = 1
-var selected_direction: int = -1
 var legal_destinations: Array[int] = []
 var topple_options: Dictionary = {}
 var undo_states: Array[TakState] = []
@@ -24,20 +23,25 @@ var hud: Control
 var status_label: Label
 var reserve_label: Label
 var undo_button: Button
-var carry_buttons: Array[Button] = []
-var direction_buttons: Array[Button] = []
 var tool_buttons: Array[Button] = []
 
 func _ready() -> void:
-	bot.budget_seconds = 2.0
+	bots[0].budget_seconds = 2.0
+	bots[1].budget_seconds = 2.0
 	_build_hud()
 	_update_hud()
 	queue_redraw()
 
+func _bot_should_act() -> bool:
+	if mode == 1 or state.over:
+		return false
+	return mode == 2 or state.current == 1
+
 func _process(_delta: float) -> void:
 	if bot_thinking:
+		var bot: MctsBot = bots[active_bot]
 		bot.tick()
-		status_label.text = "Bot thinking... %d playouts" % bot.playouts
+		status_label.text = "Bot %s thinking... %d playouts" % ["A" if active_bot == 0 else "B", bot.playouts]
 		undo_button.disabled = true
 		if bot.is_done():
 			bot_thinking = false
@@ -63,19 +67,13 @@ func _unhandled_input(event: InputEvent) -> void:
 				_select_tool(TakState.CAPSTONE)
 			KEY_ESCAPE:
 				_clear_selection()
-			KEY_LEFT:
-				_on_direction_pressed(1)
-			KEY_RIGHT:
-				_on_direction_pressed(0)
-			KEY_DOWN:
-				_on_direction_pressed(2)
-			KEY_UP:
-				_on_direction_pressed(3)
 			KEY_Z:
 				if key.ctrl_pressed:
 					_undo()
 	if event is InputEventMouseButton and event.pressed and event.button_index == MOUSE_BUTTON_LEFT:
-		if bot_thinking or state.over or (not hotseat and state.current == 1):
+		if bot_thinking or state.over or mode == 2:
+			return
+		if mode == 0 and state.current == 1:
 			return
 		var position: Vector2 = event.position
 		if position.x < BOARD_ORIGIN.x or position.y < BOARD_ORIGIN.y or position.x >= BOARD_ORIGIN.x + BOARD_PIXELS or position.y >= BOARD_ORIGIN.y + BOARD_PIXELS:
@@ -95,8 +93,8 @@ func _draw() -> void:
 		draw_rect(rect, Color("#d4ad78") if (x + y) % 2 == 0 else Color("#cba06c"))
 		if cell in legal_destinations:
 			draw_rect(rect.grow(-7), Color(0.23, 0.56, 0.29, 0.33))
-			if state.piece_type(cell) == TakState.WALL and selected_carry == 1 and state.piece_type(selected_from, int(state.heights[selected_from]) - 1) == TakState.CAPSTONE:
-				draw_string(ThemeDB.fallback_font, rect.position + Vector2(22, CELL - 9), "TOPPLE", HORIZONTAL_ALIGNMENT_LEFT, 72, 12, Color("#fff7d8"))
+			if selected_from >= 0 and state.piece_type(cell) == TakState.WALL and int(state.heights[selected_from]) == 1 and state.piece_type(selected_from) == TakState.CAPSTONE:
+				draw_string(ThemeDB.fallback_font, rect.position + Vector2(22, CELL - 9), "FLATTEN", HORIZONTAL_ALIGNMENT_LEFT, 72, 12, Color("#fff7d8"))
 		if topple_options.has(cell):
 			draw_rect(rect.grow(-7), Color(0.16, 0.40, 0.72, 0.30))
 			if bool(topple_options[cell]["last"]):
@@ -211,16 +209,17 @@ func _build_hud() -> void:
 	_add_label("TAK", Vector2(58, 24), Vector2(90, 36), 28, Color("#533c2c"))
 	status_label = _add_label("", Vector2(170, 25), Vector2(480, 32), 17, Color("#33302b"))
 	reserve_label = _add_label("", Vector2(665, 88), Vector2(390, 46), 17, Color("#41372f"))
-	var mode: OptionButton = OptionButton.new()
-	mode.position = Vector2(780, 24)
-	mode.size = Vector2(170, 34)
-	mode.add_item("Human vs Bot", 0)
-	mode.add_item("Hotseat", 1)
-	mode.item_selected.connect(_on_mode_selected)
-	hud.add_child(mode)
-	undo_button = _add_button("Undo", Vector2(960, 24), Vector2(68, 34))
+	var mode_button: OptionButton = OptionButton.new()
+	mode_button.position = Vector2(700, 24)
+	mode_button.size = Vector2(180, 34)
+	mode_button.add_item("Human vs Bot", 0)
+	mode_button.add_item("Hotseat", 1)
+	mode_button.add_item("Bot vs Bot", 2)
+	mode_button.item_selected.connect(_on_mode_selected)
+	hud.add_child(mode_button)
+	undo_button = _add_button("Undo", Vector2(890, 24), Vector2(80, 34))
 	undo_button.pressed.connect(_undo)
-	var fresh: Button = _add_button("New Game", Vector2(1033, 24), Vector2(66, 34))
+	var fresh: Button = _add_button("New Game", Vector2(980, 24), Vector2(75, 34))
 	fresh.pressed.connect(_new_game)
 	_add_label("PLACE TOOL", Vector2(665, 158), Vector2(160, 25), 15, Color("#554533"))
 	for type: int in range(3):
@@ -230,18 +229,12 @@ func _build_hud() -> void:
 		button.button_pressed = type == piece_choice
 		button.pressed.connect(_on_tool_pressed.bind(type))
 		tool_buttons.append(button)
-	_add_label("MOVEMENT", Vector2(665, 263), Vector2(150, 25), 15, Color("#554533"))
-	_add_label("Select a stack: click a TOPPLE ray to fell the tower, or pick a direction first to carry-move.", Vector2(665, 291), Vector2(390, 48), 14, Color("#51473d"))
-	for direction: int in range(4):
-		var names: Array[String] = ["→", "←", "↓", "↑"]
-		var positions: Array[Vector2] = [Vector2(665, 346), Vector2(711, 346), Vector2(757, 346), Vector2(803, 346)]
-		var button: Button = _add_button(names[direction], positions[direction], Vector2(40, 36))
-		button.pressed.connect(_on_direction_pressed.bind(direction))
-		button.disabled = true
-		direction_buttons.append(button)
-	_add_label("CARRY", Vector2(665, 403), Vector2(110, 25), 15, Color("#554533"))
-	_add_label("Win: connect ANY two opposite sides with one unbroken chain of your stones (top pieces only; walls on top break a road). Either direction wins for either player.", Vector2(665, 470), Vector2(400, 80), 14, Color("#51473d"))
-	_add_label("Click an empty square to place. F/W/C select stone; arrows pick direction; Esc clears selection.", Vector2(665, 549), Vector2(390, 64), 14, Color("#51473d"))
+	_add_label("ACTIONS", Vector2(665, 263), Vector2(150, 25), 15, Color("#554533"))
+	_add_label("Single stones move one space onto empty ground or an enemy stone.", Vector2(665, 291), Vector2(390, 48), 14, Color("#51473d"))
+	_add_label("Towers never move — click a blue TOPPLE ray to fell one; stones land alternating on empty or enemy tops.", Vector2(665, 341), Vector2(390, 60), 14, Color("#51473d"))
+	_add_label("Walls never move and nothing stacks on a wall or capstone; only a lone capstone may flatten a wall.", Vector2(665, 409), Vector2(390, 60), 14, Color("#51473d"))
+	_add_label("Win: connect ANY two opposite sides with one chain. Either direction wins for either player.", Vector2(665, 477), Vector2(400, 60), 14, Color("#51473d"))
+	_add_label("Click an empty square to place. F/W/C select stone; Esc clears selection.", Vector2(665, 541), Vector2(390, 48), 14, Color("#51473d"))
 
 func _add_label(text: String, position: Vector2, size: Vector2, font_size: int, color: Color) -> Label:
 	var label: Label = Label.new()
@@ -262,8 +255,10 @@ func _add_button(text: String, position: Vector2, size: Vector2) -> Button:
 	return button
 
 func _on_mode_selected(index: int) -> void:
-	hotseat = index == 1
+	mode = index
 	_new_game()
+	if mode == 2:
+		_start_bot_if_needed()
 
 func _on_tool_pressed(type: int) -> void:
 	_select_tool(type)
@@ -275,141 +270,59 @@ func _select_tool(type: int) -> void:
 	_update_hud()
 
 func _on_cell_clicked(cell: int) -> void:
-	if selected_from >= 0 and selected_direction < 0 and topple_options.has(cell):
+	if selected_from >= 0 and topple_options.has(cell):
 		var topple_move: Dictionary = {"kind": "topple", "from": selected_from, "dir": int(topple_options[cell]["dir"])}
 		if state.is_legal(topple_move):
 			_commit_move(topple_move)
 			return
-	if selected_from >= 0 and cell != selected_from:
-		var tried: Array[int] = []
-		if selected_direction >= 0:
-			tried.append(selected_direction)
-		for direction: int in range(4):
-			if direction not in tried:
-				tried.append(direction)
-		for direction: int in tried:
-			var distance: int = _ray_distance(selected_from, cell, direction)
-			if distance < 0:
-				continue
-			var drops: Array[int] = _auto_drops(selected_from, selected_carry, direction, distance)
-			var move: Dictionary = {"kind": "move", "from": selected_from, "carry": selected_carry, "dir": direction, "drops": drops}
-			if state.is_legal(move):
-				_commit_move(move)
-				return
-	if selected_from >= 0 and selected_direction >= 0 and cell == selected_from:
+	if selected_from >= 0 and cell in legal_destinations:
+		var move: Dictionary = {"kind": "move", "from": selected_from, "carry": 1, "dir": _dir_between(selected_from, cell), "drops": [1]}
+		if state.is_legal(move):
+			_commit_move(move)
+			return
+	if selected_from >= 0 and cell == selected_from:
 		_clear_selection()
 		return
 	if int(state.heights[cell]) == 0:
 		if selected_from < 0:
-			var move: Dictionary = {"kind": "place", "cell": cell, "piece_type": piece_choice}
-			if state.is_legal(move):
-				_commit_move(move)
+			var place: Dictionary = {"kind": "place", "cell": cell, "piece_type": piece_choice}
+			if state.is_legal(place):
+				_commit_move(place)
 		return
 	if state.piece_owner(cell) == state.current:
 		_select_stack(cell)
 	else:
 		_clear_selection()
 
+func _dir_between(from: int, cell: int) -> int:
+	var dx: int = (cell % 5) - (from % 5)
+	var dy: int = int(cell / 5) - int(from / 5)
+	if dx == 1:
+		return 0
+	if dx == -1:
+		return 1
+	if dy == 1:
+		return 2
+	return 3
+
 func _select_stack(cell: int) -> void:
 	_clear_selection()
 	selected_from = cell
-	selected_carry = mini(5, int(state.heights[cell]))
-	for carry: int in range(1, selected_carry + 1):
-		var button: Button = _add_button(str(carry), Vector2(665 + (carry - 1) * 43, 433), Vector2(37, 32))
-		button.toggle_mode = true
-		button.button_pressed = carry == selected_carry
-		button.pressed.connect(_on_carry_pressed.bind(carry))
-		carry_buttons.append(button)
-	for button: Button in direction_buttons:
-		button.disabled = false
-	for direction: int in range(4):
-		var landing: Array[int] = state.topple_landing_cells(cell, direction)
-		if landing.is_empty():
-			continue
-		for index: int in range(landing.size()):
-			topple_options[landing[index]] = {"dir": direction, "last": index == landing.size() - 1}
-	_refresh_destinations()
-	queue_redraw()
-
-func _on_carry_pressed(carry: int) -> void:
-	selected_carry = carry
-	for button: Button in carry_buttons:
-		button.button_pressed = button.text == str(carry)
-	_refresh_destinations()
-
-func _on_direction_pressed(direction: int) -> void:
-	if selected_from < 0:
-		return
-	selected_direction = direction
-	_refresh_destinations()
-	queue_redraw()
-
-func _refresh_destinations() -> void:
-	legal_destinations.clear()
-	if selected_from < 0:
-		return
-	for direction: int in range(4):
-		if selected_direction >= 0 and direction != selected_direction:
-			continue
-		for distance: int in range(1, 6):
-			var destination: int = _cell_at_distance(selected_from, direction, distance)
-			if destination < 0:
-				break
-			var drops: Array[int] = _auto_drops(selected_from, selected_carry, direction, distance)
-			if drops.is_empty():
+	var height: int = int(state.heights[cell])
+	if height == 1:
+		for direction: int in range(4):
+			if state._stone_move_legal(cell, direction):
+				var target: int = state._neighbor(cell, direction, 1)
+				if target >= 0:
+					legal_destinations.append(target)
+	else:
+		for direction: int in range(4):
+			var landing: Array[int] = state.topple_landing_cells(cell, direction)
+			if landing.is_empty():
 				continue
-			var move: Dictionary = {"kind": "move", "from": selected_from, "carry": selected_carry, "dir": direction, "drops": drops}
-			if state.is_legal(move):
-				legal_destinations.append(destination)
-
-func _auto_drops(origin: int, carry: int, direction: int, distance: int) -> Array[int]:
-	var drops: Array[int] = []
-	var remaining: int = carry
-	for step: int in range(1, distance + 1):
-		var cell: int = _cell_at_distance(origin, direction, step)
-		if cell < 0:
-			return []
-		if step < distance and state.piece_type(cell) == TakState.WALL:
-			return []
-		else:
-			var count: int = remaining if step == distance else 1
-			if count < 1:
-				return []
-			drops.append(count)
-			remaining -= count
-	return drops if remaining == 0 else []
-
-func _ray_distance(origin: int, cell: int, direction: int) -> int:
-	var ox: int = origin % 5
-	var oy: int = int(origin / 5)
-	var cx: int = cell % 5
-	var cy: int = int(cell / 5)
-	match direction:
-		0:
-			return cx - ox if cy == oy and cx > ox else -1
-		1:
-			return ox - cx if cy == oy and cx < ox else -1
-		2:
-			return cy - oy if cx == ox and cy > oy else -1
-		3:
-			return oy - cy if cx == ox and cy < oy else -1
-	return -1
-
-func _cell_at_distance(origin: int, direction: int, distance: int) -> int:
-	var x: int = origin % 5
-	var y: int = int(origin / 5)
-	match direction:
-		0:
-			x += distance
-		1:
-			x -= distance
-		2:
-			y += distance
-		3:
-			y -= distance
-	if x < 0 or x >= 5 or y < 0 or y >= 5:
-		return -1
-	return y * 5 + x
+			for index: int in range(landing.size()):
+				topple_options[landing[index]] = {"dir": direction, "last": index == landing.size() - 1}
+	queue_redraw()
 
 func _commit_move(move: Dictionary) -> void:
 	undo_states.append(state.clone())
@@ -417,10 +330,14 @@ func _commit_move(move: Dictionary) -> void:
 	state.apply_move(move)
 	_clear_selection()
 	queue_redraw()
-	if not state.over and not hotseat and state.current == 1:
-		bot.start_thinking(state)
+	_start_bot_if_needed()
+
+func _start_bot_if_needed() -> void:
+	if not bot_thinking and _bot_should_act():
+		active_bot = state.current
+		bots[active_bot].start_thinking(state)
 		bot_thinking = true
-		status_label.text = "Bot thinking... 0 playouts"
+		status_label.text = "Bot thinking..."
 	else:
 		_update_hud()
 
@@ -429,7 +346,7 @@ func _undo() -> void:
 		return
 	var last_actor: int = undo_actors.pop_back()
 	state = undo_states.pop_back()
-	if not hotseat and last_actor == 1 and not undo_states.is_empty():
+	if mode == 0 and last_actor == 1 and not undo_states.is_empty():
 		undo_actors.pop_back()
 		state = undo_states.pop_back()
 	_clear_selection()
@@ -441,20 +358,15 @@ func _new_game() -> void:
 	undo_states.clear()
 	undo_actors.clear()
 	bot_thinking = false
+	active_bot = -1
 	_clear_selection()
 	queue_redraw()
 	_update_hud()
 
 func _clear_selection() -> void:
 	selected_from = -1
-	selected_direction = -1
 	legal_destinations.clear()
 	topple_options.clear()
-	for button: Button in carry_buttons:
-		button.queue_free()
-	carry_buttons.clear()
-	for button: Button in direction_buttons:
-		button.disabled = true
 	queue_redraw()
 
 func _update_hud() -> void:
@@ -468,12 +380,12 @@ func _update_hud() -> void:
 		else:
 			status_label.text = "Light wins by flat count!" if state.winner == 0 else "Dark wins by flat count!"
 	elif bot_thinking:
-		status_label.text = "Bot thinking... %d playouts" % bot.playouts
+		status_label.text = "Bot thinking..."
 	else:
 		var tool_names: Array[String] = ["Flat", "Wall", "Capstone"]
-		var who: String = "Your turn — Light" if state.current == 0 else ("Dark's turn" if hotseat else "Dark to move")
+		var who: String = "Your turn — Light" if state.current == 0 else ("Dark's turn" if mode == 1 else "Dark to move")
 		status_label.text = "%s · placing: %s" % [who, tool_names[piece_choice]]
-	undo_button.disabled = bot_thinking
+	undo_button.disabled = bot_thinking or undo_states.is_empty()
 	for type: int in range(tool_buttons.size()):
 		var unavailable: bool = false
 		if state.opening_done[state.current] == 0:
@@ -482,5 +394,5 @@ func _update_hud() -> void:
 			unavailable = state.reserve_caps[state.current] <= 0
 		else:
 			unavailable = state.reserve_flats[state.current] <= 0
-		tool_buttons[type].disabled = unavailable
+		tool_buttons[type].disabled = unavailable or mode == 2
 	reserve_label.text = "Light  %dF  %dC          Dark  %dF  %dC" % [state.reserve_flats[0], state.reserve_caps[0], state.reserve_flats[1], state.reserve_caps[1]]
