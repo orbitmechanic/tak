@@ -263,6 +263,8 @@ func topple_landing_cells(from: int, direction: int) -> Array[int]:
 			return []
 		if stone_type == WALL and int(heights[cell]) > 0:
 			return []
+		if stone_type == CAPSTONE and piece_type(cell) == CAPSTONE:
+			return []
 		result.append(cell)
 	return result
 
@@ -282,6 +284,8 @@ func _append_paths(moves: Array[Dictionary], origin: int, carry: int, direction:
 				moves.append({"kind": "move", "from": origin, "carry": carry, "dir": direction, "drops": topple_drops})
 		return
 	if bottom_type == WALL and int(heights[destination]) > 0:
+		return
+	if bottom_type == CAPSTONE and top == CAPSTONE:
 		return
 	var remaining: int = carry - used
 	for count: int in range(1, remaining + 1):
@@ -351,9 +355,14 @@ func _has_any_path(origin: int, carry: int, direction: int) -> bool:
 	var destination: int = _neighbor(origin, direction)
 	if destination < 0:
 		return false
+	var bottom: int = piece_type(origin, int(heights[origin]) - carry)
 	if piece_type(destination) == WALL:
-		return carry == 1 and piece_type(origin, int(heights[origin]) - carry) == CAPSTONE
-	return piece_type(origin, int(heights[origin]) - carry) != WALL or int(heights[destination]) == 0
+		return carry == 1 and bottom == CAPSTONE
+	if bottom == WALL:
+		return int(heights[destination]) == 0
+	if bottom == CAPSTONE and piece_type(destination) == CAPSTONE:
+		return false
+	return true
 
 func _path_legal_internal(origin: int, carry: int, direction: int, drops: Array) -> bool:
 	if drops.is_empty() or drops.size() > BOARD_SIZE or drops.size() > CELL_COUNT:
@@ -386,6 +395,8 @@ func _path_legal_internal(origin: int, carry: int, direction: int, drops: Array)
 			if drop == 0:
 				return false
 			if bottom_type == WALL and int(heights[cell]) > 0:
+				return false
+			if bottom_type == CAPSTONE and top == CAPSTONE:
 				return false
 		remaining -= drop
 		if is_last and drop < 1:

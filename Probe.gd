@@ -14,6 +14,7 @@ func _initialize() -> void:
 	_test_wall_rules()
 	_test_wall_carry()
 	_test_topple()
+	_test_capstone_stacking()
 	_test_topple_tower()
 	_test_roads()
 	_test_full_board_count()
@@ -255,6 +256,29 @@ func _test_random_move_sampler() -> void:
 		state.apply_move(move)
 	_check("random move sampler emits legal moves", checked > 0 and legal, "sampled an illegal move")
 	_check("random move sampler checked 300 positions", checked >= 250, "too many sampler calls returned empty")
+
+func _test_capstone_stacking() -> void:
+	var a: TakState = _normal_state()
+	a.current = 0
+	_put(a, 10, 0, TakState.CAPSTONE)
+	_put(a, 11, 0, TakState.FLAT)
+	a.apply_move({"kind": "move", "from": 11, "carry": 1, "dir": 1, "drops": [1]})
+	_check("flat stones may stack onto capstones", int(a.heights[10]) == 2 and a.piece_type(10) == TakState.FLAT, "flat could not stack on capstone")
+	var b: TakState = _normal_state()
+	b.current = 1
+	_put(b, 10, 0, TakState.CAPSTONE)
+	_put(b, 11, 1, TakState.CAPSTONE)
+	var with_drops: bool = b.is_legal({"kind": "move", "from": 11, "carry": 1, "dir": 1, "drops": [1]})
+	var any_path: bool = b.is_legal({"kind": "move", "from": 11, "carry": 1, "dir": 1})
+	_check("capstone cannot stack onto capstone", not with_drops and not any_path, "cap-on-cap move was accepted")
+	var c: TakState = _normal_state()
+	c.current = 0
+	_put(c, 12, 0, TakState.FLAT)
+	_put(c, 12, 0, TakState.CAPSTONE)
+	_put(c, 14, 1, TakState.CAPSTONE)
+	_check("topple ray blocked when falling capstone lands on capstone", not c.is_legal({"kind": "topple", "from": 12, "dir": 0}) and c.is_legal({"kind": "topple", "from": 12, "dir": 1}), "capstone landing conflict not enforced in topple rays")
+	_put(c, 10, 1, TakState.WALL)
+	_check("topple ray blocked by wall cell regardless of falling stone", c.topple_landing_cells(12, 1).is_empty(), "falling stones may not land on wall-topped cells; left ray hits wall at 10")
 
 func _test_topple_tower() -> void:
 	var t: TakState = _normal_state()
