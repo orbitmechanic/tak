@@ -1,6 +1,6 @@
 # Tak
 
-A two-player digital implementation of [Tak](https://en.wikipedia.org/wiki/Tak_(fictional_game)), the abstract strategy board game from Patrick Rothfuss's *The Kingkiller Chronicle*, built with **Godot 4.7** (pure GDScript, no external assets).
+A two-player digital implementation of [Tak](https://en.wikipedia.org/wiki/Tak_(fictional_game)), the abstract strategy board game from Patrick Rothfuss's *The Kingkiller Chronicle*, built with **Godot 4.7** (pure GDScript, no external assets) and finished in an Art Nouveau skin: parchment and sage, bronze-and-gold beading, ivory and malachite glass stones, procedurally synthesized wooden SFX.
 
 ![Tak game board](docs/screenshot.png)
 
