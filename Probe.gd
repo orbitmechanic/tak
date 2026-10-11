@@ -14,6 +14,7 @@ func _initialize() -> void:
 	_test_wall_rules()
 	_test_wall_carry()
 	_test_topple()
+	_test_topple_tower()
 	_test_roads()
 	_test_full_board_count()
 	_test_clone()
@@ -255,6 +256,50 @@ func _test_random_move_sampler() -> void:
 	_check("random move sampler emits legal moves", checked > 0 and legal, "sampled an illegal move")
 	_check("random move sampler checked 300 positions", checked >= 250, "too many sampler calls returned empty")
 
+func _test_topple_tower() -> void:
+	var t: TakState = _normal_state()
+	t.current = 0
+	_put(t, 10, 0, TakState.FLAT)
+	_put(t, 10, 1, TakState.FLAT)
+	_put(t, 10, 0, TakState.CAPSTONE)
+	var legal_listed: bool = false
+	for m: Dictionary in t.legal_moves():
+		if m.get("kind") == "topple" and int(m.get("from", -1)) == 10 and int(m.get("dir", -1)) == 0:
+			legal_listed = true
+	var legal: bool = t.is_legal({"kind": "topple", "from": 10, "dir": 0})
+	t.apply_move({"kind": "topple", "from": 10, "dir": 0})
+	var distributed: bool = int(t.heights[10]) == 0 and int(t.heights[11]) == 1 and t.piece_owner(11) == 0 and t.piece_type(11) == TakState.FLAT and t.piece_owner(12) == 1 and t.piece_owner(13) == 0 and t.piece_type(13) == TakState.CAPSTONE
+	_check("tower topple distributes bottom to top", legal_listed and legal and distributed, "topple distribution wrong")
+	var b: TakState = _normal_state()
+	b.current = 0
+	_put(b, 10, 0, TakState.FLAT)
+	_put(b, 10, 0, TakState.FLAT)
+	_put(b, 12, 1, TakState.WALL)
+	_check("topple blocked by wall in path", not b.is_legal({"kind": "topple", "from": 10, "dir": 0}) and b.is_legal({"kind": "topple", "from": 10, "dir": 2}), "wall did not block topple or blocking was over-eager")
+	var w: TakState = _normal_state()
+	w.current = 0
+	_put(w, 10, 0, TakState.FLAT)
+	_put(w, 10, 0, TakState.WALL)
+	w.apply_move({"kind": "topple", "from": 10, "dir": 0})
+	_check("wall-top tower topples and re-stands", int(w.heights[12]) == 1 and w.piece_type(12) == TakState.WALL and w.piece_owner(11) == 0, "wall-top tower topple wrong")
+	var tt: TakState = _normal_state()
+	tt.current = 0
+	for i: int in range(6):
+		_put(tt, 12, 0, TakState.FLAT)
+	var no_topple: bool = true
+	for m: Dictionary in tt.legal_moves():
+		if m.get("kind") == "topple" and int(m.get("from", -1)) == 12:
+			no_topple = false
+	_check("six-tall tower cannot topple off board", no_topple and tt.has_legal_move(), "impossible topple offered or tower locked entirely")
+	var rw: TakState = _normal_state()
+	rw.current = 0
+	for cell: int in [1, 6, 16, 21]:
+		_put(rw, cell, 0, TakState.FLAT)
+	_put(rw, 12, 0, TakState.FLAT)
+	_put(rw, 12, 0, TakState.FLAT)
+	rw.apply_move({"kind": "topple", "from": 12, "dir": 1})
+	_check("topple completing a road wins", rw.over and rw.winner == 0, "road win via topple not detected")
+
 func _test_ui_flow() -> void:
 	var game = load("res://scenes/Main.tscn").instantiate()
 	root.add_child(game)
@@ -280,11 +325,23 @@ func _test_ui_flow() -> void:
 		_put(s, cell, 0, TakState.FLAT)
 	game._commit_move({"kind": "place", "cell": 14, "piece_type": TakState.FLAT})
 	var announced: bool = s.over and s.winner == 0 and "Light wins by road" in game.status_label.text
+	game._new_game()
+	var s2 = game.state
+	s2.opening_done = PackedByteArray([1, 1])
+	s2.current = 0
+	_put(s2, 12, 0, TakState.FLAT)
+	_put(s2, 12, 0, TakState.FLAT)
+	game._select_stack(12)
+	var topples_shown: bool = game.topple_options.has(13) and game.topple_options.has(14) and bool(game.topple_options[14]["last"]) and not bool(game.topple_options[13]["last"])
+	game._on_cell_clicked(14)
+	var toppled: bool = int(game.state.heights[12]) == 0 and int(game.state.heights[13]) == 1 and int(game.state.heights[14]) == 1
 	game.queue_free()
 	_check("selecting stack highlights destinations", dest_shown, "no highlight after stack selection")
 	_check("arrow key picks move direction", arrow_sets_direction, "left arrow did not select direction 1")
 	_check("destination click works after stack select", moved_without_ray_direction, "clicking highlighted cell failed to move")
 	_check("road win ends game and is announced", announced, "winning road did not stop/announce game")
+	_check("UI marks topple path with last cell flagged", topples_shown, "topple options not shown on tower select")
+	_check("UI topple click fells tower", toppled, "clicking TOPPLE cell did not topple")
 
 func _seeded_midgame_state() -> TakState:
 	var state: TakState = TakState.new()

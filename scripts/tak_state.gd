@@ -213,6 +213,12 @@ func legal_moves() -> Array[Dictionary]:
 		for carry: int in range(1, max_carry + 1):
 			for direction: int in range(4):
 				_append_paths(moves, cell, carry, direction, 0, [], 0)
+	for cell: int in range(CELL_COUNT):
+		if int(heights[cell]) < 2 or piece_owner(cell) != current:
+			continue
+		for direction: int in range(4):
+			if not topple_landing_cells(cell, direction).is_empty():
+				moves.append({"kind": "topple", "from": cell, "dir": direction})
 	return moves
 
 func has_legal_move() -> bool:
@@ -224,13 +230,41 @@ func has_legal_move() -> bool:
 		if _occupied_count < CELL_COUNT:
 			return true
 	for cell: int in range(CELL_COUNT):
-		if piece_owner(cell) != current or piece_type(cell) == WALL:
+		if piece_owner(cell) != current:
 			continue
-		for carry: int in range(1, mini(5, int(heights[cell])) + 1):
+		if piece_type(cell) != WALL:
+			for carry: int in range(1, mini(5, int(heights[cell])) + 1):
+				for direction: int in range(4):
+					if _has_any_path(cell, carry, direction):
+						return true
+		if int(heights[cell]) >= 2:
 			for direction: int in range(4):
-				if _has_any_path(cell, carry, direction):
+				if not topple_landing_cells(cell, direction).is_empty():
 					return true
 	return false
+
+func topple_landing_cells(from: int, direction: int) -> Array[int]:
+	var result: Array[int] = []
+	if over:
+		return result
+	var height: int = int(heights[from])
+	if height < 2:
+		return result
+	var owner: int = piece_owner(from)
+	if owner != current:
+		return result
+	for step: int in range(1, height + 1):
+		var cell: int = _neighbor(from, direction, step)
+		if cell < 0:
+			return []
+		var stone: int = int(cells[from * MAX_STACK + step - 1])
+		var stone_type: int = stone % 3
+		if piece_type(cell) == WALL:
+			return []
+		if stone_type == WALL and int(heights[cell]) > 0:
+			return []
+		result.append(cell)
+	return result
 
 func _append_paths(moves: Array[Dictionary], origin: int, carry: int, direction: int, distance: int, drops: Array[int], used: int) -> void:
 	if distance >= BOARD_SIZE:
@@ -273,6 +307,14 @@ func is_legal(move: Dictionary) -> bool:
 		if piece == FLAT or piece == WALL:
 			return reserve_flats[current] > 0
 		return piece == CAPSTONE and reserve_caps[current] > 0
+	if str(move["kind"]) == "topple":
+		if not move.has("from") or not move.has("dir"):
+			return false
+		var origin_t: int = int(move["from"])
+		var direction_t: int = int(move["dir"])
+		if direction_t < 0 or direction_t > 3:
+			return false
+		return not topple_landing_cells(origin_t, direction_t).is_empty()
 	if str(move["kind"]) != "move" or not move.has("from") or not move.has("carry") or not move.has("dir"):
 		return false
 	var origin: int = int(move["from"])
@@ -385,6 +427,16 @@ func random_move(rng: RandomNumberGenerator) -> Dictionary:
 			return _stamp_random_move(opening_moves[rng.randi_range(0, opening_moves.size() - 1)])
 		return {}
 	var movable_cells: PackedInt32Array = _movable_cells[current]
+	if rng.randf() < 0.25:
+		var tower_cells: Array[int] = []
+		for cell: int in range(CELL_COUNT):
+			if int(heights[cell]) >= 2 and piece_owner(cell) == current:
+				tower_cells.append(cell)
+		if not tower_cells.is_empty():
+			var origin_topple: int = tower_cells[rng.randi_range(0, tower_cells.size() - 1)]
+			var dir_topple: int = rng.randi_range(0, 3)
+			if not topple_landing_cells(origin_topple, dir_topple).is_empty():
+				return _stamp_random_move({"kind": "topple", "from": origin_topple, "dir": dir_topple})
 	for attempt: int in range(8):
 		if movable_cells.is_empty():
 			break
@@ -431,6 +483,8 @@ func _stamp_random_move(move: Dictionary) -> Dictionary:
 func _move_signature(move: Dictionary) -> int:
 	if str(move.get("kind", "")) == "place":
 		return (1 << 30) | (int(move["cell"]) << 3) | int(move["piece_type"])
+	if str(move.get("kind", "")) == "topple":
+		return (2 << 30) | int(move["from"]) | (int(move["dir"]) << 5)
 	var signature: int = int(move["from"]) | (int(move["carry"]) << 5) | (int(move["dir"]) << 8)
 	var drops: Array = move.get("drops", [])
 	for index: int in range(drops.size()):
@@ -465,6 +519,8 @@ func apply_move(move: Dictionary) -> void:
 		else:
 			reserve_flats[owner] -= 1
 		opening_done[actor] = 1
+	elif str(move["kind"]) == "topple":
+		_apply_topple(move)
 	else:
 		_apply_stack_move(move)
 	turn_number += 1
@@ -520,6 +576,29 @@ func _apply_stack_move(move: Dictionary) -> void:
 		for piece_index: int in range(count):
 			_push_encoded(destination, carried[offset])
 			offset += 1
+		_update_road_mask_cell(destination)
+
+func _apply_topple(move: Dictionary) -> void:
+	var origin: int = int(move["from"])
+	var direction: int = int(move["dir"])
+	var landing: Array[int] = topple_landing_cells(origin, direction)
+	var height: int = int(heights[origin])
+	var base: int = origin * MAX_STACK
+	var carried: Array[int] = []
+	for index: int in range(height):
+		carried.append(int(cells[base + index]))
+	for index: int in range(height):
+		cells[base + index] = 0
+	heights[origin] = 0
+	_occupied_count -= 1
+	_update_road_mask_cell(origin)
+	for index: int in range(height):
+		var destination: int = landing[index]
+		var previous: int = int(heights[destination])
+		cells[destination * MAX_STACK + previous] = carried[index]
+		heights[destination] = previous + 1
+		if previous == 0:
+			_occupied_count += 1
 		_update_road_mask_cell(destination)
 
 func _push_piece(cell: int, owner: int, piece: int) -> void:

@@ -17,6 +17,7 @@ var selected_from: int = -1
 var selected_carry: int = 1
 var selected_direction: int = -1
 var legal_destinations: Array[int] = []
+var topple_options: Dictionary = {}
 var undo_states: Array[TakState] = []
 var undo_actors: Array[int] = []
 var hud: Control
@@ -96,6 +97,11 @@ func _draw() -> void:
 			draw_rect(rect.grow(-7), Color(0.23, 0.56, 0.29, 0.33))
 			if state.piece_type(cell) == TakState.WALL and selected_carry == 1 and state.piece_type(selected_from, int(state.heights[selected_from]) - 1) == TakState.CAPSTONE:
 				draw_string(ThemeDB.fallback_font, rect.position + Vector2(22, CELL - 9), "TOPPLE", HORIZONTAL_ALIGNMENT_LEFT, 72, 12, Color("#fff7d8"))
+		if topple_options.has(cell):
+			draw_rect(rect.grow(-7), Color(0.16, 0.40, 0.72, 0.30))
+			if bool(topple_options[cell]["last"]):
+				draw_rect(rect.grow(-4), Color(0.98, 0.65, 0.20, 0.9), false, 3.0)
+				draw_string(ThemeDB.fallback_font, rect.position + Vector2(6, CELL - 9), "TOPPLE", HORIZONTAL_ALIGNMENT_LEFT, 100, 12, Color("#fff7d8"))
 		if cell == selected_from:
 			draw_rect(rect.grow(-4), Color(0.95, 0.79, 0.28, 0.54))
 		draw_rect(rect, Color("#78583b"), false, 2.0)
@@ -225,7 +231,7 @@ func _build_hud() -> void:
 		button.pressed.connect(_on_tool_pressed.bind(type))
 		tool_buttons.append(button)
 	_add_label("MOVEMENT", Vector2(665, 263), Vector2(150, 25), 15, Color("#554533"))
-	_add_label("Select a stack, carry, direction, then destination.", Vector2(665, 291), Vector2(390, 48), 14, Color("#51473d"))
+	_add_label("Select a stack; green = move, orange TOPPLE = fell the tower.", Vector2(665, 291), Vector2(390, 48), 14, Color("#51473d"))
 	for direction: int in range(4):
 		var names: Array[String] = ["→", "←", "↓", "↑"]
 		var positions: Array[Vector2] = [Vector2(665, 346), Vector2(711, 346), Vector2(757, 346), Vector2(803, 346)]
@@ -269,6 +275,11 @@ func _select_tool(type: int) -> void:
 	_update_hud()
 
 func _on_cell_clicked(cell: int) -> void:
+	if selected_from >= 0 and topple_options.has(cell) and bool(topple_options[cell]["last"]):
+		var topple_move: Dictionary = {"kind": "topple", "from": selected_from, "dir": int(topple_options[cell]["dir"])}
+		if state.is_legal(topple_move):
+			_commit_move(topple_move)
+			return
 	if selected_from >= 0 and cell != selected_from:
 		var tried: Array[int] = []
 		if selected_direction >= 0:
@@ -294,7 +305,7 @@ func _on_cell_clicked(cell: int) -> void:
 			if state.is_legal(move):
 				_commit_move(move)
 		return
-	if state.piece_owner(cell) == state.current and state.piece_type(cell) != TakState.WALL:
+	if state.piece_owner(cell) == state.current:
 		_select_stack(cell)
 	else:
 		_clear_selection()
@@ -311,6 +322,12 @@ func _select_stack(cell: int) -> void:
 		carry_buttons.append(button)
 	for button: Button in direction_buttons:
 		button.disabled = false
+	for direction: int in range(4):
+		var landing: Array[int] = state.topple_landing_cells(cell, direction)
+		if landing.is_empty():
+			continue
+		for index: int in range(landing.size()):
+			topple_options[landing[index]] = {"dir": direction, "last": index == landing.size() - 1}
 	_refresh_destinations()
 	queue_redraw()
 
@@ -432,6 +449,7 @@ func _clear_selection() -> void:
 	selected_from = -1
 	selected_direction = -1
 	legal_destinations.clear()
+	topple_options.clear()
 	for button: Button in carry_buttons:
 		button.queue_free()
 	carry_buttons.clear()

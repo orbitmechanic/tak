@@ -9,7 +9,8 @@ A two-player digital implementation of [Tak](https://en.wikipedia.org/wiki/Tak_(
 - Each player: 21 flat stones + 1 capstone
 - Opening moves: each player places one of the *opponent's* flats
 - Place or move per turn; stack carry limit of 5 with mandatory drop in every cell entered
-- Walls are immobile, block stacking, and can only be toppled by a lone capstone (toppled walls become the original owner's flats)
+- Walls are immobile, block stacking, and a cell topped by a wall can only be entered by a lone capstone, which flattens it (toppled walls become the original owner's flats)
+- **Tower toppling** (the novel's rule): instead of carrying, any tower whose top piece is yours (any height ≥ 2, any top piece type) may be felled in a straight line — one stone per cell, bottom-to-top — in any direction that has enough room on the board; a direction is blocked if any landing cell is off-board, wall-topped, or would need a falling wall to land on stones
 - Win by road: an orthogonally connected chain of your flats/capstones (top pieces only) joining **any two opposite edges of the board** — either pair counts for either player; if the game ends by board fill / no legal moves, winner is by count of top flats
 - Diagonals are meaningless, per the book
 
@@ -24,7 +25,7 @@ godot --path .
 ## Controls
 
 - Click an empty square to place; **F / W / C** (or the Place Tool buttons) select flat / wall / capstone
-- Click one of your stacks → choose **carry** size → **direction** → highlighted **destination**
+- Click one of your stacks → choose **carry** size → **direction** → highlighted **destination** (green cells); the last cell of each valid topple ray is outlined orange and labeled **TOPPLE** — click it to fell the whole tower in that direction
 - **Undo** (or Ctrl+Z), **New Game**, and a **Human vs Bot / Hotseat** switch live in the top bar
 - A lone capstone moving onto a wall toppling it is hinted with `TOPPLE`
 
