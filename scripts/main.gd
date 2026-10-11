@@ -231,7 +231,7 @@ func _build_hud() -> void:
 		button.pressed.connect(_on_tool_pressed.bind(type))
 		tool_buttons.append(button)
 	_add_label("MOVEMENT", Vector2(665, 263), Vector2(150, 25), 15, Color("#554533"))
-	_add_label("Select a stack; green = move, orange TOPPLE = fell the tower.", Vector2(665, 291), Vector2(390, 48), 14, Color("#51473d"))
+	_add_label("Select a stack: click a TOPPLE ray to fell the tower, or pick a direction first to carry-move.", Vector2(665, 291), Vector2(390, 48), 14, Color("#51473d"))
 	for direction: int in range(4):
 		var names: Array[String] = ["→", "←", "↓", "↑"]
 		var positions: Array[Vector2] = [Vector2(665, 346), Vector2(711, 346), Vector2(757, 346), Vector2(803, 346)]
@@ -275,7 +275,7 @@ func _select_tool(type: int) -> void:
 	_update_hud()
 
 func _on_cell_clicked(cell: int) -> void:
-	if selected_from >= 0 and topple_options.has(cell) and bool(topple_options[cell]["last"]):
+	if selected_from >= 0 and selected_direction < 0 and topple_options.has(cell):
 		var topple_move: Dictionary = {"kind": "topple", "from": selected_from, "dir": int(topple_options[cell]["dir"])}
 		if state.is_legal(topple_move):
 			_commit_move(topple_move)

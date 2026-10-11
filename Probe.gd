@@ -260,10 +260,13 @@ func _test_random_move_sampler() -> void:
 func _test_capstone_stacking() -> void:
 	var a: TakState = _normal_state()
 	a.current = 0
-	_put(a, 10, 0, TakState.CAPSTONE)
+	_put(a, 12, 0, TakState.CAPSTONE)
 	_put(a, 11, 0, TakState.FLAT)
-	a.apply_move({"kind": "move", "from": 11, "carry": 1, "dir": 1, "drops": [1]})
-	_check("flat stones may stack onto capstones", int(a.heights[10]) == 2 and a.piece_type(10) == TakState.FLAT, "flat could not stack on capstone")
+	_put(a, 10, 0, TakState.FLAT)
+	var flat_onto_cap: bool = a.is_legal({"kind": "move", "from": 11, "carry": 1, "dir": 0, "drops": [1]})
+	var flat_any_path: bool = a.is_legal({"kind": "move", "from": 11, "carry": 1, "dir": 0})
+	var pass_over_cap: bool = a.is_legal({"kind": "move", "from": 10, "carry": 2, "dir": 0, "drops": [1, 1]})
+	_check("nothing may be moved onto or over a capstone", not flat_onto_cap and not flat_any_path and not pass_over_cap, "capstone stacking or pass-over was accepted")
 	var b: TakState = _normal_state()
 	b.current = 1
 	_put(b, 10, 0, TakState.CAPSTONE)
@@ -359,6 +362,15 @@ func _test_ui_flow() -> void:
 	var topples_shown: bool = game.topple_options.has(13) and game.topple_options.has(14) and bool(game.topple_options[14]["last"]) and not bool(game.topple_options[13]["last"])
 	game._on_cell_clicked(14)
 	var toppled: bool = int(game.state.heights[12]) == 0 and int(game.state.heights[13]) == 1 and int(game.state.heights[14]) == 1
+	game._new_game()
+	var s3 = game.state
+	s3.opening_done = PackedByteArray([1, 1])
+	s3.current = 0
+	_put(s3, 12, 0, TakState.FLAT)
+	_put(s3, 12, 0, TakState.CAPSTONE)
+	game._select_stack(12)
+	game._on_cell_clicked(13)
+	var ray_click_toppled: bool = int(game.state.heights[12]) == 0 and int(game.state.heights[13]) == 1 and int(game.state.heights[14]) == 1 and game.state.piece_type(14) == TakState.CAPSTONE
 	game.queue_free()
 	_check("selecting stack highlights destinations", dest_shown, "no highlight after stack selection")
 	_check("arrow key picks move direction", arrow_sets_direction, "left arrow did not select direction 1")
@@ -366,6 +378,7 @@ func _test_ui_flow() -> void:
 	_check("road win ends game and is announced", announced, "winning road did not stop/announce game")
 	_check("UI marks topple path with last cell flagged", topples_shown, "topple options not shown on tower select")
 	_check("UI topple click fells tower", toppled, "clicking TOPPLE cell did not topple")
+	_check("clicking any ray cell topples when no direction picked", ray_click_toppled, "intermediate ray click moved instead of toppling")
 
 func _seeded_midgame_state() -> TakState:
 	var state: TakState = TakState.new()

@@ -259,11 +259,9 @@ func topple_landing_cells(from: int, direction: int) -> Array[int]:
 			return []
 		var stone: int = int(cells[from * MAX_STACK + step - 1])
 		var stone_type: int = stone % 3
-		if piece_type(cell) == WALL:
+		if piece_type(cell) == WALL or piece_type(cell) == CAPSTONE:
 			return []
 		if stone_type == WALL and int(heights[cell]) > 0:
-			return []
-		if stone_type == CAPSTONE and piece_type(cell) == CAPSTONE:
 			return []
 		result.append(cell)
 	return result
@@ -275,6 +273,8 @@ func _append_paths(moves: Array[Dictionary], origin: int, carry: int, direction:
 	if destination < 0:
 		return
 	var top: int = piece_type(destination)
+	if top == CAPSTONE:
+		return
 	var bottom_type: int = piece_type(origin, int(heights[origin]) - carry)
 	if top == WALL:
 		if carry == 1 and bottom_type == CAPSTONE:
@@ -356,12 +356,12 @@ func _has_any_path(origin: int, carry: int, direction: int) -> bool:
 	if destination < 0:
 		return false
 	var bottom: int = piece_type(origin, int(heights[origin]) - carry)
+	if piece_type(destination) == CAPSTONE:
+		return false
 	if piece_type(destination) == WALL:
 		return carry == 1 and bottom == CAPSTONE
 	if bottom == WALL:
 		return int(heights[destination]) == 0
-	if bottom == CAPSTONE and piece_type(destination) == CAPSTONE:
-		return false
 	return true
 
 func _path_legal_internal(origin: int, carry: int, direction: int, drops: Array) -> bool:
@@ -394,9 +394,9 @@ func _path_legal_internal(origin: int, carry: int, direction: int, drops: Array)
 		else:
 			if drop == 0:
 				return false
-			if bottom_type == WALL and int(heights[cell]) > 0:
+			if top == CAPSTONE:
 				return false
-			if bottom_type == CAPSTONE and top == CAPSTONE:
+			if bottom_type == WALL and int(heights[cell]) > 0:
 				return false
 		remaining -= drop
 		if is_last and drop < 1:
@@ -472,6 +472,9 @@ func random_move(rng: RandomNumberGenerator) -> Dictionary:
 					var topple: Dictionary = {"kind": "move", "from": from, "carry": carry, "dir": direction, "drops": drops}
 					if _path_legal_internal(from, carry, direction, drops):
 						return _stamp_random_move(topple)
+				break
+			if top == CAPSTONE:
+				valid_walk = false
 				break
 			if bottom_type == WALL and int(heights[cell]) > 0:
 				valid_walk = false

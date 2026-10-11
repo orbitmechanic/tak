@@ -10,7 +10,7 @@ A two-player digital implementation of [Tak](https://en.wikipedia.org/wiki/Tak_(
 - Opening moves: each player places one of the *opponent's* flats
 - Place or move per turn; stack carry limit of 5 with mandatory drop in every cell entered
 - No piece can be moved onto a wall, so walls are only ever the *top* of a tower, never buried inside one; a wall-topped cell can only be entered by a lone capstone, which flattens the wall (it stays the original owner's, now a flat) and rests on top of it
-- Capstones never stack on capstones — which is exactly why each player gets only one; flats may stack onto capstones freely
+- Capstones block stacking entirely: **nothing may be moved onto or passed over a capstone** (it can never be buried), and nothing may be stacked on a capstone — which is why each player gets exactly one; a capstone always remains a visible road piece while it is the top of its cell
 - **Tower toppling** (the novel's rule): instead of carrying, any tower whose top piece is yours (any height ≥ 2, any top piece type) may be felled in a straight line — one stone per cell, bottom-to-top — in any direction that has enough room on the board; a direction is blocked if any landing cell is off-board, wall-topped, or would need a falling wall to land on stones
 - Win by road: an orthogonally connected chain of your flats/capstones (top pieces only) joining **any two opposite edges of the board** — either pair counts for either player; if the game ends by board fill / no legal moves, winner is by count of top flats
 - Diagonals are meaningless, per the book
@@ -26,7 +26,7 @@ godot --path .
 ## Controls
 
 - Click an empty square to place; **F / W / C** (or the Place Tool buttons) select flat / wall / capstone
-- Click one of your stacks → choose **carry** size → **direction** → highlighted **destination** (green cells); the last cell of each valid topple ray is outlined orange and labeled **TOPPLE** — click it to fell the whole tower in that direction
+- Click one of your stacks → **click any cell of a highlighted TOPPLE ray** (blue cells, orange-capped) to fell the tower that way, bottom-to-top; or press a **direction** button (or arrow key) first and then a green **destination** to make a carry-move instead
 - **Undo** (or Ctrl+Z), **New Game**, and a **Human vs Bot / Hotseat** switch live in the top bar
 - A lone capstone moving onto a wall toppling it is hinted with `TOPPLE`
 
