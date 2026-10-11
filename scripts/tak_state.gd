@@ -25,10 +25,37 @@ var _road_status_dirty: PackedByteArray = PackedByteArray([1, 1])
 var _occupied_count: int = 0
 var _trusted_random_signature: int = 0
 var _has_trusted_random_move: bool = false
+const RULE_WALLS_BLOCK: int = 1
+const RULE_TOPPLE_ENEMY_TOP: int = 2
+const RULE_BIDIRECTIONAL: int = 4
+var rule_flags: int = 0
 var current: int = 0
 var over: bool = false
 var winner: int = -1
 var turn_number: int = 0
+
+func set_rules(walls_block: bool, topple_enemy_top: bool, bidirectional: bool) -> void:
+	rule_flags = 0
+	if walls_block:
+		rule_flags |= RULE_WALLS_BLOCK
+	if topple_enemy_top:
+		rule_flags |= RULE_TOPPLE_ENEMY_TOP
+	if bidirectional:
+		rule_flags |= RULE_BIDIRECTIONAL
+	_mark_road_masks_dirty()
+
+func get_rules() -> Array[bool]:
+	return [(rule_flags & RULE_WALLS_BLOCK) != 0, (rule_flags & RULE_TOPPLE_ENEMY_TOP) != 0, (rule_flags & RULE_BIDIRECTIONAL) != 0]
+
+func _counts_in_road(piece: int) -> bool:
+	if piece == FLAT or piece == CAPSTONE:
+		return true
+	return piece == WALL and (rule_flags & RULE_WALLS_BLOCK) == 0
+
+func _road_direction_allowed(player: int, horizontal: bool) -> bool:
+	if (rule_flags & RULE_BIDIRECTIONAL) != 0:
+		return true
+	return player == 0 if horizontal else player == 1
 
 func _init() -> void:
 	cells.resize(CELL_COUNT * MAX_STACK)
@@ -48,6 +75,7 @@ func clone() -> TakState:
 	result._road_status = _road_status.duplicate()
 	result._road_status_dirty = _road_status_dirty.duplicate()
 	result._occupied_count = _occupied_count
+	result.rule_flags = rule_flags
 	result.current = current
 	result.over = over
 	result.winner = winner
@@ -74,7 +102,11 @@ func road_exists(player: int) -> bool:
 	if _road_masks_dirty:
 		_rebuild_road_masks()
 	if _road_status_dirty[player] != 0:
-		_road_status[player] = 1 if _mask_connects(int(_road_masks[player]), true) or _mask_connects(int(_road_masks[player]), false) else 0
+		var found: bool = false
+		for horizontal: bool in [true, false]:
+			if _road_direction_allowed(player, horizontal) and _mask_connects(int(_road_masks[player]), horizontal):
+				found = true
+		_road_status[player] = 1 if found else 0
 		_road_status_dirty[player] = 0
 	return _road_status[player] != 0
 
@@ -96,6 +128,8 @@ func road_cells(player: int) -> Array[int]:
 		_rebuild_road_masks()
 	var qualifying: int = int(_road_masks[player])
 	for horizontal: bool in [true, false]:
+		if not _road_direction_allowed(player, horizontal):
+			continue
 		var found: Array[int] = _road_cells_dir(qualifying, horizontal)
 		if not found.is_empty():
 			return found
@@ -126,7 +160,7 @@ func _rebuild_road_masks() -> void:
 			continue
 		var encoded: int = int(cells[cell * MAX_STACK + int(heights[cell]) - 1])
 		var piece: int = encoded % 3
-		if piece == FLAT or piece == CAPSTONE:
+		if _counts_in_road(piece):
 			_road_masks[encoded / 3] |= 1 << cell
 	_road_masks_dirty = false
 	_road_status_dirty[0] = 1
@@ -146,7 +180,7 @@ func _update_road_mask_cell(cell: int) -> void:
 	if int(heights[cell]) > 0:
 		var encoded: int = int(cells[cell * MAX_STACK + int(heights[cell]) - 1])
 		var piece: int = encoded % 3
-		if piece == FLAT or piece == CAPSTONE:
+		if _counts_in_road(piece):
 			_road_masks[encoded / 3] |= bit
 	if old_light != (int(_road_masks[0]) & bit):
 		_road_status_dirty[0] = 1
@@ -191,7 +225,7 @@ func topple_landing_cells(from: int, direction: int) -> Array[int]:
 	var height: int = int(heights[from])
 	if height < 2:
 		return result
-	if piece_owner(from) != current:
+	if piece_owner(from) != current and (rule_flags & RULE_TOPPLE_ENEMY_TOP) == 0:
 		return []
 	if direction < 0 or direction > 3:
 		return result
@@ -230,13 +264,12 @@ func legal_moves() -> Array[Dictionary]:
 			if reserve_caps[current] > 0:
 				moves.append({"kind": "place", "cell": cell, "piece_type": CAPSTONE})
 			continue
-		if piece_owner(cell) != current:
-			continue
-		if int(heights[cell]) == 1:
-			for direction: int in range(4):
-				if _stone_move_legal(cell, direction):
-					moves.append({"kind": "move", "from": cell, "carry": 1, "dir": direction, "drops": [1]})
-		else:
+		if piece_owner(cell) == current:
+			if int(heights[cell]) == 1:
+				for direction: int in range(4):
+					if _stone_move_legal(cell, direction):
+						moves.append({"kind": "move", "from": cell, "carry": 1, "dir": direction, "drops": [1]})
+		if int(heights[cell]) >= 2 and (piece_owner(cell) == current or (rule_flags & RULE_TOPPLE_ENEMY_TOP) != 0):
 			for direction: int in range(4):
 				if not topple_landing_cells(cell, direction).is_empty():
 					moves.append({"kind": "topple", "from": cell, "dir": direction})
@@ -251,13 +284,13 @@ func has_legal_move() -> bool:
 		return true
 	for cell: int in range(CELL_COUNT):
 		var height: int = int(heights[cell])
-		if height == 0 or piece_owner(cell) != current:
+		if height == 0:
 			continue
-		if height == 1:
+		if height == 1 and piece_owner(cell) == current:
 			for direction: int in range(4):
 				if _stone_move_legal(cell, direction):
 					return true
-		else:
+		elif height >= 2 and (piece_owner(cell) == current or (rule_flags & RULE_TOPPLE_ENEMY_TOP) != 0):
 			for direction: int in range(4):
 				if not topple_landing_cells(cell, direction).is_empty():
 					return true
@@ -407,14 +440,15 @@ func random_move(rng: RandomNumberGenerator) -> Dictionary:
 	for attempt: int in range(10):
 		var cell: int = rng.randi_range(0, CELL_COUNT - 1)
 		var height: int = int(heights[cell])
-		if height == 0 or piece_owner(cell) != current:
+		if height == 0:
 			continue
 		var direction: int = rng.randi_range(0, 3)
 		if height == 1:
 			if _stone_move_legal(cell, direction):
 				return _stamp_random_move({"kind": "move", "from": cell, "carry": 1, "dir": direction, "drops": [1]})
-		elif not topple_landing_cells(cell, direction).is_empty():
-			return _stamp_random_move({"kind": "topple", "from": cell, "dir": direction})
+		elif piece_owner(cell) == current or (rule_flags & RULE_TOPPLE_ENEMY_TOP) != 0:
+			if not topple_landing_cells(cell, direction).is_empty():
+				return _stamp_random_move({"kind": "topple", "from": cell, "dir": direction})
 	var fallback: Array[Dictionary] = legal_moves()
 	if not fallback.is_empty():
 		return _stamp_random_move(fallback[rng.randi_range(0, fallback.size() - 1)])

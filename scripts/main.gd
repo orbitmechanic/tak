@@ -5,16 +5,39 @@ const MctsBot = preload("res://scripts/mcts_bot.gd")
 const CELL: float = 112.0
 const BOARD_ORIGIN: Vector2 = Vector2(52.0, 126.0)
 const BOARD_PIXELS: float = CELL * 5.0
-const LIGHT_COLOR: Color = Color("#f5ecd4")
-const DARK_COLOR: Color = Color("#1d5c55")
-const PARCHMENT: Color = Color("#efe5cb")
-const PARCHMENT_DEEP: Color = Color("#e6d9b8")
-const BRONZE: Color = Color("#4f3f26")
-const GOLD: Color = Color("#c9a227")
-const GOLD_PALE: Color = Color("#dcc06a")
-const SAGE_A: Color = Color("#aeb98e")
-const SAGE_B: Color = Color("#a2b084")
-const TEAL: Color = Color("#2e6b66")
+var LIGHT_COLOR: Color = Color("#f5ecd4")
+var DARK_COLOR: Color = Color("#1d5c55")
+var PARCHMENT: Color = Color("#efe5cb")
+var PARCHMENT_DEEP: Color = Color("#e6d9b8")
+var BRONZE: Color = Color("#4f3f26")
+var GOLD: Color = Color("#c9a227")
+var GOLD_PALE: Color = Color("#dcc06a")
+var SAGE_A: Color = Color("#aeb98e")
+var SAGE_B: Color = Color("#a2b084")
+var TEAL: Color = Color("#2e6b66")
+var FRAME_MID: Color = Color("#6b5530")
+var GRID_LINE: Color = Color(0.31, 0.25, 0.13, 0.55)
+var LEGAL_HI: Color = Color(0.80, 0.64, 0.20, 0.32)
+var TOPPLE_HI: Color = Color(0.18, 0.42, 0.40, 0.35)
+var LABEL_BRIGHT: Color = Color("#f7efda")
+var VEIL: Color = Color(0.16, 0.12, 0.05, 0.55)
+var BANNER_BG: Color = Color(0.94, 0.89, 0.73, 0.95)
+var BANNER_LINE: Color = Color(0.31, 0.25, 0.13, 0.5)
+var BADGE_BG: Color = Color(0.15, 0.10, 0.06, 0.75)
+var BADGE_RING: Color = Color("#f3e8ca")
+var RIM_DARK: Color = Color("#8fae9f")
+var PETAL_D: Color = Color("#e9f2ea", 0.3)
+var TEXT_INK: Color = Color("#3e3524")
+var TEXT_HEADING: Color = Color("#8a6d1f")
+var TEXT_STATUS: Color = Color("#4a3b22")
+var TEXT_RESERVE: Color = Color("#3e5248")
+var TEXT_HELP: Color = Color("#5a5136")
+var THEME_BG: Color = Color("#ecdfbe")
+var THEME_HOVER: Color = Color("#f6edd3")
+var THEME_TEXT: Color = Color("#3e3524")
+var THEME_HOVER_TEXT: Color = Color("#233a35")
+var THEME_PRESSED_TEXT: Color = Color("#f2e9d4")
+var THEME_DISABLED_TEXT: Color = Color("#a29075")
 const STONE_FLIGHT: float = 0.28
 const SFX_PLACE = preload("res://assets/sounds/place.wav")
 const SFX_MOVE = preload("res://assets/sounds/move.wav")
@@ -49,6 +72,17 @@ var indicator_cells: Array[int] = []
 var clock: float = 0.0
 var hud: Control
 var app_theme: Theme
+var dark_mode: bool = false
+var rules: Array[bool] = [false, false, false]
+var role_labels: Array[Dictionary] = []
+var rule_popup: Control
+var rule_checks: Array[CheckButton] = []
+var move_label: Label
+var topple_label: Label
+var wall_label: Label
+var win_label: Label
+var house_list_label: Label
+var house_note_label: Label
 var status_label: Label
 var reserve_label: Label
 var undo_button: Button
@@ -214,7 +248,7 @@ func _draw() -> void:
 	draw_rect(Rect2(Vector2.ZERO, get_viewport_rect().size), PARCHMENT)
 	draw_rect(Rect2(0, get_viewport_rect().size.y - 46, get_viewport_rect().size.x, 46), PARCHMENT_DEEP)
 	draw_rect(Rect2(BOARD_ORIGIN - Vector2(16, 16), Vector2(BOARD_PIXELS + 32, BOARD_PIXELS + 32)), BRONZE)
-	draw_rect(Rect2(BOARD_ORIGIN - Vector2(11, 11), Vector2(BOARD_PIXELS + 22, BOARD_PIXELS + 22)), Color("#6b5530"))
+	draw_rect(Rect2(BOARD_ORIGIN - Vector2(11, 11), Vector2(BOARD_PIXELS + 22, BOARD_PIXELS + 22)), FRAME_MID)
 	draw_rect(Rect2(BOARD_ORIGIN - Vector2(9, 9), Vector2(BOARD_PIXELS + 18, BOARD_PIXELS + 18)), GOLD, false, 1.6)
 	draw_rect(Rect2(BOARD_ORIGIN, Vector2(BOARD_PIXELS, BOARD_PIXELS),), SAGE_A)
 	for i: int in range(20):
@@ -233,17 +267,17 @@ func _draw() -> void:
 		var rect: Rect2 = Rect2(BOARD_ORIGIN + Vector2(x * CELL, y * CELL), Vector2(CELL, CELL))
 		draw_rect(rect, SAGE_A if (x + y) % 2 == 0 else SAGE_B)
 		if cell in legal_destinations:
-			draw_rect(rect.grow(-7), Color(0.80, 0.64, 0.20, 0.32))
+			draw_rect(rect.grow(-7), LEGAL_HI)
 			if selected_from >= 0 and state.piece_type(cell) == TakState.WALL and int(state.heights[selected_from]) == 1 and state.piece_type(selected_from) == TakState.CAPSTONE:
-				draw_string(ThemeDB.fallback_font, rect.position + Vector2(22, CELL - 9), "FLATTEN", HORIZONTAL_ALIGNMENT_LEFT, 72, 12, Color("#3e3524"))
+				draw_string(ThemeDB.fallback_font, rect.position + Vector2(22, CELL - 9), "FLATTEN", HORIZONTAL_ALIGNMENT_LEFT, 72, 12, TEXT_INK)
 		if topple_options.has(cell):
-			draw_rect(rect.grow(-7), Color(0.18, 0.42, 0.40, 0.35))
+			draw_rect(rect.grow(-7), TOPPLE_HI)
 			if bool(topple_options[cell]["last"]):
 				draw_rect(rect.grow(-4), Color(GOLD, 0.95), false, 3.0)
-				draw_string(ThemeDB.fallback_font, rect.position + Vector2(6, CELL - 9), "TOPPLE", HORIZONTAL_ALIGNMENT_LEFT, 100, 12, Color("#f7efda"))
+				draw_string(ThemeDB.fallback_font, rect.position + Vector2(6, CELL - 9), "TOPPLE", HORIZONTAL_ALIGNMENT_LEFT, 100, 12, LABEL_BRIGHT)
 		if cell == selected_from:
 			draw_rect(rect.grow(-4), Color(GOLD_PALE, 0.55))
-		draw_rect(rect, Color(0.31, 0.25, 0.13, 0.55), false, 1.4)
+		draw_rect(rect, GRID_LINE, false, 1.4)
 		_draw_stack(cell, rect)
 	if anim_entries.is_empty() and not indicator_cells.is_empty():
 		var pulse: float = 0.5 + 0.5 * sin(clock * 4.0)
@@ -273,10 +307,12 @@ func _draw() -> void:
 			scale = 1.0 + 0.14 * sin(raw * PI)
 		if raw < 1.0:
 			_draw_piece_at(int(e["piece"]), pos, scale, 1.0 - raw)
-	draw_rect(Rect2(BOARD_ORIGIN - Vector2(9, 0), Vector2(9, BOARD_PIXELS)), TEAL)
-	draw_rect(Rect2(BOARD_ORIGIN + Vector2(BOARD_PIXELS, 0), Vector2(9, BOARD_PIXELS)), TEAL)
-	draw_rect(Rect2(BOARD_ORIGIN, Vector2(BOARD_PIXELS, 9)), TEAL)
-	draw_rect(Rect2(BOARD_ORIGIN + Vector2(0, BOARD_PIXELS), Vector2(BOARD_PIXELS, 9)), TEAL)
+	var band_lr: Color = TEAL if rules[2] else LIGHT_COLOR
+	var band_tb: Color = TEAL
+	draw_rect(Rect2(BOARD_ORIGIN - Vector2(9, 0), Vector2(9, BOARD_PIXELS)), band_lr)
+	draw_rect(Rect2(BOARD_ORIGIN + Vector2(BOARD_PIXELS, 0), Vector2(9, BOARD_PIXELS)), band_lr)
+	draw_rect(Rect2(BOARD_ORIGIN, Vector2(BOARD_PIXELS, 9)), band_tb)
+	draw_rect(Rect2(BOARD_ORIGIN + Vector2(0, BOARD_PIXELS), Vector2(BOARD_PIXELS, 9)), band_tb)
 	for i: int in range(20):
 		var gy: float = BOARD_ORIGIN.y + 14.0 + float(i) * (BOARD_PIXELS - 28.0) / 19.0
 		draw_circle(Vector2(BOARD_ORIGIN.x - 4.5, gy), 1.6, GOLD_PALE)
@@ -287,7 +323,7 @@ func _draw() -> void:
 		draw_circle(Vector2(gx, BOARD_ORIGIN.y + BOARD_PIXELS + 4.5), 1.6, GOLD_PALE)
 	_draw_nouveau_ornament()
 	if state.over:
-		draw_rect(Rect2(BOARD_ORIGIN, Vector2(BOARD_PIXELS, BOARD_PIXELS)), Color(0.16, 0.12, 0.05, 0.55))
+		draw_rect(Rect2(BOARD_ORIGIN, Vector2(BOARD_PIXELS, BOARD_PIXELS)), VEIL)
 		var winning_cells: Array[int] = []
 		if state.winner < 2:
 			winning_cells = state.road_cells(state.winner)
@@ -296,10 +332,10 @@ func _draw() -> void:
 			draw_rect(rect.grow(-10), Color(0.92, 0.78, 0.25, 0.52))
 		var result: String = "DRAW" if state.winner == 2 else ("LIGHT WINS" if state.winner == 0 else "DARK WINS")
 		var banner: Rect2 = Rect2(BOARD_ORIGIN + Vector2(105, 236), Vector2(350, 96))
-		draw_rect(banner, Color(0.94, 0.89, 0.73, 0.95))
+		draw_rect(banner, BANNER_BG)
 		draw_rect(banner.grow(-6), Color(GOLD, 0.9), false, 2.0)
-		draw_rect(banner.grow(-11), Color(0.31, 0.25, 0.13, 0.5), false, 1.0)
-		draw_string(ThemeDB.fallback_font, banner.position + Vector2(0, 62), result, HORIZONTAL_ALIGNMENT_CENTER, banner.size.x, 32, Color("#3e3524"))
+		draw_rect(banner.grow(-11), BANNER_LINE, false, 1.0)
+		draw_string(ThemeDB.fallback_font, banner.position + Vector2(0, 62), result, HORIZONTAL_ALIGNMENT_CENTER, banner.size.x, 32, TEXT_INK)
 		_rosette(banner.position + Vector2(20, 48), 6.0)
 		_rosette(banner.end - Vector2(20, 48), 6.0)
 
@@ -363,9 +399,9 @@ func _draw_stack(cell: int, rect: Rect2) -> void:
 		_draw_piece_at(encoded, center + shift, 1.0, 0.0)
 	if height > 2:
 		var badge_center: Vector2 = rect.position + Vector2(CELL - 15, 15)
-		draw_circle(badge_center, 11, Color(0.15, 0.10, 0.06, 0.75))
-		draw_arc(badge_center, 9.5, 0.0, TAU, 24, Color("#f3e8ca", 0.75), 1.0)
-		draw_string(ThemeDB.fallback_font, rect.position + Vector2(CELL - 20, 20), str(height), HORIZONTAL_ALIGNMENT_CENTER, 10, 13, Color.WHITE)
+		draw_circle(badge_center, 11, BADGE_BG)
+		draw_arc(badge_center, 9.5, 0.0, TAU, 24, Color(BADGE_RING, 0.75), 1.0)
+		draw_string(ThemeDB.fallback_font, rect.position + Vector2(CELL - 20, 20), str(height), HORIZONTAL_ALIGNMENT_CENTER, 10, 13, LABEL_BRIGHT)
 
 func _draw_piece_at(encoded: int, center: Vector2, scale: float, shadow_depth: float) -> void:
 	_piece_scale = scale
@@ -404,11 +440,11 @@ func _draw_piece_local(encoded: int, shadow_depth: float) -> void:
 			draw_circle(toward_light * float(i) * 1.2, radius - float(i) * 3.4, base.lightened(0.28).lerp(base, amount))
 		_local_ellipse(Vector2(-radius * 0.38, -radius * 0.42), 9.0, 0.62, Color(1.0, 1.0, 0.95, 0.35))
 		draw_arc(Vector2.ZERO, radius - 1.5, PI * 0.10, PI * 0.90, 24, base.darkened(0.5), 2.0, true)
-		var rim: Color = Color(GOLD, 0.95) if owner == 0 else Color("#8fae9f")
+		var rim: Color = Color(GOLD, 0.95) if owner == 0 else RIM_DARK
 		draw_arc(Vector2.ZERO, radius - 0.5, 0.0, TAU, 52, rim, 2.6, true)
 		draw_arc(Vector2.ZERO, radius - 6.0, 0.0, TAU, 48, Color(GOLD, 0.4 * fade), 1.3, true)
 		for petal: int in range(3):
-			_local_leaf(Vector2.ZERO, float(petal) * TAU / 3.0 - PI / 2.0, radius * 0.52, Color(GOLD, 0.42 * fade) if owner == 0 else Color("#e9f2ea", 0.3 * fade))
+			_local_leaf(Vector2.ZERO, float(petal) * TAU / 3.0 - PI / 2.0, radius * 0.52, Color(GOLD, 0.42 * fade) if owner == 0 else Color(PETAL_D, PETAL_D.a * fade / 0.3))
 	elif kind == TakState.WALL:
 		var face: Rect2 = Rect2(Vector2(-19, -32), Vector2(38, 64))
 		_local_ellipse(Vector2(4, 6), 22.0, 0.38, Color(0.20, 0.13, 0.06, 0.30 * fade))
@@ -458,7 +494,7 @@ func _draw_rounded_rect(position: Vector2, size: Vector2, corner_radius: float, 
 func _make_nouveau_theme() -> Theme:
 	var theme: Theme = Theme.new()
 	var box: StyleBoxFlat = StyleBoxFlat.new()
-	box.bg_color = Color("#ecdfbe")
+	box.bg_color = THEME_BG
 	box.border_color = Color(GOLD, 0.8)
 	box.set_border_width_all(2)
 	box.set_corner_radius_all(9)
@@ -467,11 +503,11 @@ func _make_nouveau_theme() -> Theme:
 	box.content_margin_top = 4.0
 	box.content_margin_bottom = 4.0
 	var hover: StyleBoxFlat = box.duplicate()
-	hover.bg_color = Color("#f6edD3")
+	hover.bg_color = THEME_HOVER
 	var pressed: StyleBoxFlat = box.duplicate()
 	pressed.bg_color = TEAL
 	var disabled: StyleBoxFlat = box.duplicate()
-	disabled.bg_color = Color("#e6dcbd", 0.5)
+	disabled.bg_color = Color(THEME_BG, 0.45)
 	disabled.border_color = Color(GOLD, 0.3)
 	theme.set_stylebox("normal", "Button", box)
 	theme.set_stylebox("hover", "Button", hover)
@@ -483,14 +519,21 @@ func _make_nouveau_theme() -> Theme:
 	theme.set_stylebox("selected", "OptionButton", pressed)
 	theme.set_stylebox("disabled", "OptionButton", disabled)
 	theme.set_stylebox("panel", "PopupPanel", box)
-	theme.set_color("font_color", "Button", Color("#3e3524"))
-	theme.set_color("font_hover_color", "Button", Color("#233a35"))
-	theme.set_color("font_pressed_color", "Button", Color("#f2e9d4"))
+	theme.set_stylebox("panel", "Panel", box)
+	var empty: StyleBoxEmpty = StyleBoxEmpty.new()
+	for kind: String in ["normal", "hover", "pressed", "disabled", "focused"]:
+		theme.set_stylebox(kind, "CheckButton", empty)
+	theme.set_color("font_color", "Button", THEME_TEXT)
+	theme.set_color("font_hover_color", "Button", THEME_HOVER_TEXT)
+	theme.set_color("font_pressed_color", "Button", THEME_PRESSED_TEXT)
 	theme.set_color("font_disabled_color", "Button", Color("#a2977a"))
-	theme.set_color("font_color", "OptionButton", Color("#3e3524"))
-	theme.set_color("font_hover_color", "OptionButton", Color("#233a35"))
-	theme.set_color("font_pressed_color", "OptionButton", Color("#f2e9d4"))
-	theme.set_color("font_color", "Label", Color("#3e3524"))
+	theme.set_color("font_color", "OptionButton", THEME_TEXT)
+	theme.set_color("font_hover_color", "OptionButton", THEME_HOVER_TEXT)
+	theme.set_color("font_pressed_color", "OptionButton", THEME_PRESSED_TEXT)
+	theme.set_color("font_color", "Label", THEME_TEXT)
+	theme.set_color("font_color", "CheckBox", THEME_TEXT)
+	theme.set_color("font_hover_color", "CheckBox", THEME_HOVER_TEXT)
+	theme.set_color("font_pressed_color", "CheckBox", THEME_HOVER_TEXT)
 	return theme
 
 func _build_hud() -> void:
@@ -502,23 +545,27 @@ func _build_hud() -> void:
 	hud.set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
 	hud.mouse_filter = Control.MOUSE_FILTER_IGNORE
 	layer.add_child(hud)
-	_add_label("TAK", Vector2(58, 18), Vector2(120, 42), 30, Color("#3e3524"))
-	status_label = _add_label("", Vector2(196, 34), Vector2(430, 26), 16, Color("#4a3b22"))
-	reserve_label = _add_label("", Vector2(665, 66), Vector2(390, 30), 17, Color("#3e5248"))
+	_add_label("TAK", Vector2(58, 18), Vector2(120, 42), 30, "ink")
+	status_label = _add_label("", Vector2(196, 34), Vector2(390, 26), 16, "status")
+	reserve_label = _add_label("", Vector2(665, 66), Vector2(435, 30), 17, "reserve")
 	var mode_button: OptionButton = OptionButton.new()
-	mode_button.theme = app_theme
-	mode_button.position = Vector2(700, 24)
-	mode_button.size = Vector2(180, 34)
+	mode_button.position = Vector2(600, 24)
+	mode_button.size = Vector2(150, 34)
 	mode_button.add_item("Human vs Bot", 0)
 	mode_button.add_item("Hotseat", 1)
 	mode_button.add_item("Bot vs Bot", 2)
 	mode_button.item_selected.connect(_on_mode_selected)
 	hud.add_child(mode_button)
-	undo_button = _add_button("Undo", Vector2(890, 24), Vector2(80, 34))
+	undo_button = _add_button("Undo", Vector2(758, 24), Vector2(62, 34))
 	undo_button.pressed.connect(_undo)
-	var fresh: Button = _add_button("New Game", Vector2(980, 24), Vector2(75, 34))
+	var fresh: Button = _add_button("New Game", Vector2(828, 24), Vector2(72, 34))
 	fresh.pressed.connect(_new_game)
-	_add_label("PLACE TOOL", Vector2(665, 158), Vector2(160, 25), 15, Color("#8a6d1f"))
+	var house: Button = _add_button("House Rules", Vector2(908, 24), Vector2(100, 34))
+	house.pressed.connect(_toggle_rule_popup)
+	var dark: Button = _add_button("Dark", Vector2(1016, 24), Vector2(56, 34))
+	dark.name = "DarkButton"
+	dark.pressed.connect(_toggle_dark)
+	_add_label("PLACE TOOL", Vector2(665, 158), Vector2(160, 25), 15, "heading")
 	for type: int in range(3):
 		var labels: Array[String] = ["Flat  F", "Wall  W", "Cap  C"]
 		var button: Button = _add_button(labels[type], Vector2(665 + type * 96, 188), Vector2(88, 38))
@@ -526,32 +573,207 @@ func _build_hud() -> void:
 		button.button_pressed = type == piece_choice
 		button.pressed.connect(_on_tool_pressed.bind(type))
 		tool_buttons.append(button)
-	_add_label("ACTIONS", Vector2(665, 263), Vector2(150, 25), 15, Color("#8a6d1f"))
-	_add_label("Single stones move one space onto empty ground or an enemy stone.", Vector2(665, 291), Vector2(390, 48), 14, Color("#5a5136"))
-	_add_label("Towers never move — click a blue TOPPLE ray to fell one; stones land alternating on empty or enemy tops.", Vector2(665, 341), Vector2(390, 60), 14, Color("#5a5136"))
-	_add_label("Walls never move and nothing stacks on a wall or capstone; only a lone capstone may flatten an ENEMY wall.", Vector2(665, 409), Vector2(390, 60), 14, Color("#5a5136"))
-	_add_label("Win: connect ANY two opposite sides with one chain. Either direction wins for either player.", Vector2(665, 477), Vector2(400, 60), 14, Color("#5a5136"))
-	_add_label("Pulsing orange ring marks the last move. F/W/C select stone; Esc clears selection; M mutes sound.", Vector2(665, 541), Vector2(390, 48), 14, Color("#5a5136"))
+	_add_label("ACTIONS", Vector2(665, 263), Vector2(150, 25), 15, "heading")
+	move_label = _add_label("", Vector2(665, 291), Vector2(435, 44), 14, "help")
+	topple_label = _add_label("", Vector2(665, 337), Vector2(435, 60), 14, "help")
+	wall_label = _add_label("", Vector2(665, 399), Vector2(435, 60), 14, "help")
+	win_label = _add_label("", Vector2(665, 461), Vector2(435, 60), 14, "help")
+	_add_label("Pulsing ring marks the last move. F/W/C select stone; Esc clears selection; M mutes.", Vector2(665, 523), Vector2(435, 44), 14, "help")
+	house_list_label = _add_label("", Vector2(665, 573), Vector2(435, 24), 14, "heading")
+	house_note_label = _add_label("Rules marked * are house rules (House Rules button).", Vector2(665, 599), Vector2(435, 24), 12, "help")
+	house_note_label.visible = false
+	_build_rule_popup()
+	_refresh_rule_text()
 
-func _add_label(text: String, position: Vector2, size: Vector2, font_size: int, color: Color) -> Label:
+func _role_color(role: String) -> Color:
+	match role:
+		"ink":
+			return TEXT_INK
+		"heading":
+			return TEXT_HEADING
+		"status":
+			return TEXT_STATUS
+		"reserve":
+			return TEXT_RESERVE
+		_:
+			return TEXT_HELP
+
+func _add_label(text: String, position: Vector2, size: Vector2, font_size: int, role: String) -> Label:
 	var label: Label = Label.new()
-	label.theme = app_theme
 	label.text = text
 	label.position = position
 	label.size = size
 	label.add_theme_font_size_override("font_size", font_size)
-	label.add_theme_color_override("font_color", color)
+	label.add_theme_color_override("font_color", _role_color(role))
+	role_labels.append({"l": label, "r": role})
 	hud.add_child(label)
 	return label
 
 func _add_button(text: String, position: Vector2, size: Vector2) -> Button:
 	var button: Button = Button.new()
-	button.theme = app_theme
 	button.text = text
 	button.position = position
 	button.size = size
 	hud.add_child(button)
 	return button
+
+func _build_rule_popup() -> void:
+	rule_popup = Panel.new()
+	rule_popup.position = Vector2(150, 190)
+	rule_popup.size = Vector2(400, 316)
+	rule_popup.visible = false
+	rule_popup.mouse_filter = Control.MOUSE_FILTER_STOP
+	hud.add_child(rule_popup)
+	var title: Label = Label.new()
+	title.text = "HOUSE RULES"
+	title.position = Vector2(0, 14)
+	title.size = Vector2(380, 30)
+	title.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
+	title.add_theme_font_size_override("font_size", 20)
+	title.add_theme_color_override("font_color", TEXT_INK)
+	role_labels.append({"l": title, "r": "ink"})
+	rule_popup.add_child(title)
+	var names: Array[String] = ["Walls block all paths", "Topple towers with opposing top color", "Bi-directional win paths"]
+	for i: int in range(3):
+		var check: CheckButton = CheckButton.new()
+		check.text = names[i]
+		check.position = Vector2(20, 62 + i * 42)
+		check.size = Vector2(370, 36)
+		check.button_pressed = rules[i]
+		check.toggled.connect(_on_rule_toggled.bind(i))
+		rule_popup.add_child(check)
+		rule_checks.append(check)
+	var note: Label = Label.new()
+	note.text = "Default: all OFF — classical play. Changes apply immediately, including mid-game."
+	note.position = Vector2(20, 202)
+	note.size = Vector2(370, 52)
+	note.add_theme_font_size_override("font_size", 12)
+	note.add_theme_color_override("font_color", TEXT_HELP)
+	role_labels.append({"l": note, "r": "help"})
+	rule_popup.add_child(note)
+	var close: Button = Button.new()
+	close.text = "Close"
+	close.position = Vector2(160, 264)
+	close.size = Vector2(80, 32)
+	close.pressed.connect(func() -> void: rule_popup.visible = false)
+	rule_popup.add_child(close)
+
+func _toggle_rule_popup() -> void:
+	rule_popup.visible = not rule_popup.visible
+
+func _on_rule_toggled(pressed: bool, index: int) -> void:
+	rules[index] = pressed
+	state.set_rules(rules[0], rules[1], rules[2])
+	_refresh_rule_text()
+
+func _refresh_rule_text() -> void:
+	move_label.text = "Single stones move one space onto empty ground or an enemy stone."
+	if rules[1]:
+		topple_label.text = "Towers never move — topple your towers or enemy-topped ones (*); stones land alternating."
+	else:
+		topple_label.text = "Towers never move — click a blue TOPPLE ray to fell your towers; stones land alternating."
+	if rules[0]:
+		wall_label.text = "Walls never move; nothing stacks on walls or capstones; lone capstone flattens ENEMY walls. Walls break roads (*)."
+	else:
+		wall_label.text = "Walls never move; nothing stacks on walls or capstones; lone capstone flattens ENEMY walls. Own walls count in roads."
+	if rules[2]:
+		win_label.text = "Win: connect ANY two opposite sides with one chain — either direction for either player (*)."
+	else:
+		win_label.text = "Win: Light joins the IVORY sides (left/right); Dark joins the TEAL sides (top/bottom)."
+	var active: Array[String] = []
+	if rules[0]:
+		active.append("* Walls block all paths")
+	if rules[1]:
+		active.append("* Topple enemy-topped towers")
+	if rules[2]:
+		active.append("* Bi-directional win paths")
+	house_list_label.text = "  ".join(active)
+	house_note_label.visible = not active.is_empty()
+
+func _toggle_dark() -> void:
+	dark_mode = not dark_mode
+	_apply_palette()
+	for child: Node in hud.get_children():
+		if child is Button and child.name == "DarkButton":
+			(child as Button).text = "Light" if dark_mode else "Dark"
+
+func _apply_palette() -> void:
+	if dark_mode:
+		LIGHT_COLOR = Color("#ece1bd")
+		DARK_COLOR = Color("#2e8577")
+		PARCHMENT = Color("#1f241f")
+		PARCHMENT_DEEP = Color("#171b16")
+		BRONZE = Color("#12100b")
+		GOLD = Color("#b98f2a")
+		GOLD_PALE = Color("#d3ad55")
+		SAGE_A = Color("#4b5747")
+		SAGE_B = Color("#424e41")
+		TEAL = Color("#276a62")
+		FRAME_MID = Color("#2e2416")
+		GRID_LINE = Color(0.85, 0.75, 0.45, 0.25)
+		LEGAL_HI = Color(0.72, 0.55, 0.18, 0.30)
+		TOPPLE_HI = Color(0.16, 0.38, 0.36, 0.35)
+		LABEL_BRIGHT = Color("#f2e9cf")
+		VEIL = Color(0.02, 0.03, 0.02, 0.6)
+		BANNER_BG = Color(0.13, 0.16, 0.13, 0.95)
+		BANNER_LINE = Color(0.85, 0.75, 0.45, 0.5)
+		BADGE_BG = Color(0.05, 0.06, 0.04, 0.8)
+		BADGE_RING = Color("#d9c98f")
+		RIM_DARK = Color("#79a894")
+		PETAL_D = Color("#dfeee2", 0.3)
+		TEXT_INK = Color("#e3d8ba")
+		TEXT_HEADING = Color("#cfa64a")
+		TEXT_STATUS = Color("#cbbd92")
+		TEXT_RESERVE = Color("#8fbcae")
+		TEXT_HELP = Color("#b3a67c")
+		THEME_BG = Color("#2b3128")
+		THEME_HOVER = Color("#353c31")
+		THEME_TEXT = Color("#d9ccaa")
+		THEME_HOVER_TEXT = Color("#eeddb0")
+		THEME_PRESSED_TEXT = Color("#101410")
+		THEME_DISABLED_TEXT = Color("#6c6850")
+	else:
+		LIGHT_COLOR = Color("#f5ecd4")
+		DARK_COLOR = Color("#1d5c55")
+		PARCHMENT = Color("#efe5cb")
+		PARCHMENT_DEEP = Color("#e6d9b8")
+		BRONZE = Color("#4f3f26")
+		GOLD = Color("#c9a227")
+		GOLD_PALE = Color("#dcc06a")
+		SAGE_A = Color("#aeb98e")
+		SAGE_B = Color("#a2b084")
+		TEAL = Color("#2e6b66")
+		FRAME_MID = Color("#6b5530")
+		GRID_LINE = Color(0.31, 0.25, 0.13, 0.55)
+		LEGAL_HI = Color(0.80, 0.64, 0.20, 0.32)
+		TOPPLE_HI = Color(0.18, 0.42, 0.40, 0.35)
+		LABEL_BRIGHT = Color("#f7efda")
+		VEIL = Color(0.16, 0.12, 0.05, 0.55)
+		BANNER_BG = Color(0.94, 0.89, 0.73, 0.95)
+		BANNER_LINE = Color(0.31, 0.25, 0.13, 0.5)
+		BADGE_BG = Color(0.15, 0.10, 0.06, 0.75)
+		BADGE_RING = Color("#f3e8ca")
+		RIM_DARK = Color("#8fae9f")
+		PETAL_D = Color("#e9f2ea", 0.3)
+		TEXT_INK = Color("#3e3524")
+		TEXT_HEADING = Color("#8a6d1f")
+		TEXT_STATUS = Color("#4a3b22")
+		TEXT_RESERVE = Color("#3e5248")
+		TEXT_HELP = Color("#5a5136")
+		THEME_BG = Color("#ecdfbe")
+		THEME_HOVER = Color("#f6edd3")
+		THEME_TEXT = Color("#3e3524")
+		THEME_HOVER_TEXT = Color("#233a35")
+		THEME_PRESSED_TEXT = Color("#f2e9d4")
+		THEME_DISABLED_TEXT = Color("#a29075")
+	if is_instance_valid(hud):
+		app_theme = _make_nouveau_theme()
+		hud.theme = app_theme
+		for entry: Dictionary in role_labels:
+			if is_instance_valid(entry["l"]):
+				entry["l"].add_theme_color_override("font_color", _role_color(entry["r"]))
+	_refresh_rule_text()
+	queue_redraw()
 
 func _on_mode_selected(index: int) -> void:
 	mode = index
@@ -674,6 +896,8 @@ func _undo() -> void:
 
 func _new_game() -> void:
 	state = TakState.new()
+	state.set_rules(rules[0], rules[1], rules[2])
+	_refresh_rule_text()
 	undo_states.clear()
 	undo_actors.clear()
 	undo_visuals.clear()

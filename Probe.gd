@@ -240,8 +240,27 @@ func _test_roads() -> void:
 	var hdark: TakState = _normal_state()
 	for x: int in range(5):
 		_put(hdark, 10 + x, 1, TakState.FLAT)
-	_check("vertical Light road also counts", vlight.road_exists(0), "either-direction rule not applied to Light")
-	_check("horizontal Dark road also counts", hdark.road_exists(1), "either-direction rule not applied to Dark")
+	_check("side-based: Light vertical is NOT a road", not vlight.road_exists(0), "default rules let Light win vertically")
+	_check("side-based: Dark horizontal is NOT a road", not hdark.road_exists(1), "default rules let Dark win horizontally")
+	vlight.set_rules(true, false, true)
+	hdark.set_rules(true, false, true)
+	_check("bidirectional house rule enables either direction", vlight.road_exists(0) and hdark.road_exists(1), "bidirectional flag not applied")
+	var wrow: TakState = _normal_state()
+	wrow.set_rules(false, false, true)
+	for x: int in range(5):
+		_put(wrow, 10 + x, 0, TakState.FLAT if x != 2 else TakState.WALL)
+	var wblock: TakState = wrow.clone()
+	wblock.set_rules(true, false, true)
+	_check("walls-in-road house rule counts own walls", wrow.road_exists(0) and not wblock.road_exists(0), "walls_block flag not applied to roads")
+	var et: TakState = _normal_state()
+	et.current = 0
+	_put(et, 10, 0, TakState.FLAT)
+	_put(et, 10, 1, TakState.FLAT)
+	var et_on: TakState = et.clone()
+	et_on.set_rules(true, true, false)
+	var own_only: bool = et.topple_landing_cells(10, 0).is_empty()
+	var enemy_top: bool = not et_on.topple_landing_cells(10, 0).is_empty()
+	_check("enemy-top topple gated by house rule", own_only and enemy_top, "topple_enemy_top flag wrong")
 
 func _filled_board(light_flats: int, dark_flats: int) -> TakState:
 	var state: TakState = _normal_state()
