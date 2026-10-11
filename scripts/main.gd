@@ -7,6 +7,9 @@ const BOARD_ORIGIN: Vector2 = Vector2(52.0, 126.0)
 const BOARD_PIXELS: float = CELL * 5.0
 const LIGHT_COLOR: Color = Color("#f3e8ca")
 const DARK_COLOR: Color = Color("#9d2938")
+const STONE_FLIGHT: float = 0.28
+const TOPPLE_STAGGER: float = 0.09
+const PLACE_POP: float = 0.22
 
 var state: TakState = TakState.new()
 var bots: Array[MctsBot] = [MctsBot.new(), MctsBot.new()]
@@ -19,6 +22,12 @@ var legal_destinations: Array[int] = []
 var topple_options: Dictionary = {}
 var undo_states: Array[TakState] = []
 var undo_actors: Array[int] = []
+var undo_visuals: Array[Dictionary] = []
+var anim_entries: Array[Dictionary] = []
+var anim_time: float = 0.0
+var anim_length: float = 0.0
+var indicator_cells: Array[int] = []
+var clock: float = 0.0
 var hud: Control
 var status_label: Label
 var reserve_label: Label
@@ -37,7 +46,16 @@ func _bot_should_act() -> bool:
 		return false
 	return mode == 2 or state.current == 1
 
-func _process(_delta: float) -> void:
+func _process(delta: float) -> void:
+	clock += delta
+	if anim_entries.is_empty():
+		if not indicator_cells.is_empty():
+			queue_redraw()
+	else:
+		anim_time += delta
+		if anim_time >= anim_length:
+			anim_entries = []
+		queue_redraw()
 	if bot_thinking:
 		var bot: MctsBot = bots[active_bot]
 		bot.tick()
@@ -54,6 +72,49 @@ func _process(_delta: float) -> void:
 					_commit_move(fallback[randi_range(0, fallback.size() - 1)])
 				else:
 					_update_hud()
+
+func _cell_center(cell: int) -> Vector2:
+	return BOARD_ORIGIN + Vector2((cell % 5) * CELL + CELL / 2.0, int(cell / 5) * CELL + CELL / 2.0)
+
+func _build_plan(move: Dictionary) -> Dictionary:
+	var entries: Array[Dictionary] = []
+	var cells_touched: Array[int] = []
+	var kind: String = str(move.get("kind", ""))
+	if kind == "place":
+		var cell: int = int(move["cell"])
+		var owner: int = state.current if state.opening_done[state.current] != 0 else 1 - state.current
+		entries.append({"piece": owner * 3 + int(move["piece_type"]), "from": cell, "to": cell, "t0": 0.0, "dur": PLACE_POP, "pop": true})
+		cells_touched.append(cell)
+	elif kind == "move":
+		var from: int = int(move["from"])
+		var dest: int = state._neighbor(from, int(move["dir"]), 1)
+		entries.append({"piece": int(state.cells[from * TakState.MAX_STACK]), "from": from, "to": dest, "t0": 0.0, "dur": STONE_FLIGHT, "pop": false})
+		cells_touched.append(from)
+		cells_touched.append(dest)
+	elif kind == "topple":
+		var origin: int = int(move["from"])
+		var landing: Array[int] = state.topple_landing_cells(origin, int(move["dir"]))
+		for i: int in range(landing.size()):
+			entries.append({"piece": int(state.cells[origin * TakState.MAX_STACK + i]), "from": origin, "to": landing[i], "t0": float(i) * TOPPLE_STAGGER, "dur": STONE_FLIGHT, "pop": false})
+			cells_touched.append(landing[i])
+		cells_touched.append(origin)
+	var total: float = 0.0
+	for e: Dictionary in entries:
+		total = maxf(total, float(e["t0"]) + float(e["dur"]))
+	return {"entries": entries, "cells": cells_touched, "length": total + 0.05}
+
+func _start_animation(plan: Dictionary) -> void:
+	anim_entries = plan["entries"]
+	anim_length = float(plan["length"])
+	anim_time = 0.0
+	indicator_cells = plan["cells"]
+
+func _unarrived_at(cell: int) -> int:
+	var count: int = 0
+	for e: Dictionary in anim_entries:
+		if int(e["to"]) == cell and anim_time < float(e["t0"]) + float(e["dur"]):
+			count += 1
+	return count
 
 func _unhandled_input(event: InputEvent) -> void:
 	if event is InputEventKey and event.pressed and not event.echo:
@@ -104,6 +165,34 @@ func _draw() -> void:
 			draw_rect(rect.grow(-4), Color(0.95, 0.79, 0.28, 0.54))
 		draw_rect(rect, Color("#78583b"), false, 2.0)
 		_draw_stack(cell, rect)
+	if anim_entries.is_empty() and not indicator_cells.is_empty():
+		var pulse: float = 0.5 + 0.5 * sin(clock * 4.0)
+		for cell: int in indicator_cells:
+			if int(state.heights[cell]) == 0:
+				draw_rect(Rect2(BOARD_ORIGIN + Vector2((cell % 5) * CELL, int(cell / 5) * CELL), Vector2(CELL, CELL)).grow(-3), Color(0.98, 0.70, 0.20, 0.25 + 0.35 * pulse), false, 3.0)
+			else:
+				draw_arc(_cell_center(cell), 44.0, 0.0, TAU, 40, Color(0.98, 0.70, 0.20, 0.30 + 0.40 * pulse), 3.0, true)
+	for e: Dictionary in anim_entries:
+		var t0: float = float(e["t0"])
+		var dur: float = float(e["dur"])
+		var raw: float = clampf((anim_time - t0) / dur, 0.0, 1.0)
+		if raw <= 0.0:
+			raw = 0.0
+		if anim_time < t0:
+			raw = 0.0
+		var scale: float
+		var pos: Vector2
+		if bool(e["pop"]):
+			var u: float = raw - 1.0
+			scale = clampf(1.0 + 2.70158 * u * u * u + 1.70158 * u * u, 0.05, 2.0)
+			pos = _cell_center(int(e["to"]))
+		else:
+			var ease_t: float = 1.0 - pow(1.0 - raw, 2.0)
+			pos = _cell_center(int(e["from"])).lerp(_cell_center(int(e["to"])), ease_t)
+			pos.y -= sin(raw * PI) * 20.0
+			scale = 1.0 + 0.14 * sin(raw * PI)
+		if raw < 1.0:
+			_draw_piece_at(int(e["piece"]), pos, scale, 1.0 - raw)
 	draw_rect(Rect2(BOARD_ORIGIN - Vector2(9, 0), Vector2(9, BOARD_PIXELS)), Color("#8d775c"))
 	draw_rect(Rect2(BOARD_ORIGIN + Vector2(BOARD_PIXELS, 0), Vector2(9, BOARD_PIXELS)), Color("#8d775c"))
 	draw_line(BOARD_ORIGIN, BOARD_ORIGIN + Vector2(0, BOARD_PIXELS), Color("#78583b"), 2.0)
@@ -126,69 +215,87 @@ func _draw_stack(cell: int, rect: Rect2) -> void:
 	if height == 0:
 		return
 	var center: Vector2 = rect.get_center()
-	var visible: int = mini(height, 5)
+	var unarrived: int = _unarrived_at(cell)
+	var draw_count: int = maxi(0, height - unarrived)
+	var visible: int = mini(draw_count, 5)
 	for index: int in range(visible):
-		var layer: int = height - visible + index
-		var encoded: int = state.cells[cell * TakState.MAX_STACK + layer]
-		var owner: int = int(encoded / 3)
-		var kind: int = encoded % 3
+		var layer: int = draw_count - visible + index
+		var encoded: int = int(state.cells[cell * TakState.MAX_STACK + layer])
 		var shift: Vector2 = Vector2(0, -float(index) * 7.0)
-		var piece_center: Vector2 = center + shift
-		var base: Color = LIGHT_COLOR if owner == 0 else DARK_COLOR
-		if kind == TakState.FLAT:
-			var radius: float = 34.0
-			_draw_transformed_ellipse(piece_center + Vector2(5, 8), radius + 2.0, Vector2(1.0, 0.5), Color(0.20, 0.13, 0.06, 0.30))
-			draw_circle(piece_center + Vector2(0, 5), radius, base.darkened(0.55))
-			draw_circle(piece_center, radius, base)
-			var toward_light: Vector2 = Vector2(-1, -1).normalized()
-			for i: int in range(8):
-				var amount: float = float(i) / 7.0
-				draw_circle(piece_center + toward_light * float(i) * 1.2, radius - float(i) * 3.4, base.lightened(0.28).lerp(base, amount))
-			_draw_transformed_ellipse(piece_center + Vector2(-radius * 0.38, -radius * 0.42), 9.0, Vector2(1.0, 0.62), Color(1.0, 1.0, 0.95, 0.35))
-			draw_arc(piece_center, radius - 1.5, PI * 0.10, PI * 0.90, 24, base.darkened(0.5), 2.0, true)
-		elif kind == TakState.WALL:
-			var face: Rect2 = Rect2(piece_center + Vector2(-19, -32), Vector2(38, 64))
-			_draw_transformed_ellipse(piece_center + Vector2(4, 6), 22.0, Vector2(1.0, 0.38), Color(0.20, 0.13, 0.06, 0.30))
-			_draw_rounded_rect(face.position + Vector2(5, 0), face.size, 8.0, base.darkened(0.55))
-			_draw_rounded_rect(face.position, face.size, 8.0, base)
-			var face_w: float = face.size.x
-			for slice: int in range(6):
-				var tx: float = (float(slice) + 0.5) / 6.0
-				var shade: float = 1.0 - 0.45 * absf(tx - 0.3)
-				var slice_color: Color = base.lightened(0.30).lerp(base.darkened(0.40), 1.0 - shade)
-				var slice_rect: Rect2 = Rect2(face.position + Vector2(face_w * float(slice) / 6.0, 8.0), Vector2(face_w / 6.0 + 0.25, face.size.y - 16.0))
-				draw_rect(slice_rect, slice_color)
-			draw_line(face.position + Vector2(3, 3), face.position + Vector2(face_w - 3, 3), Color(base.lightened(0.4), 0.5), 2.0)
-		else:
-			var square: Rect2 = Rect2(piece_center + Vector2(-28, -28), Vector2(56, 56))
-			_draw_transformed_ellipse(piece_center + Vector2(4, 7), 33.0, Vector2(1.0, 0.45), Color(0.20, 0.13, 0.06, 0.30))
-			_draw_rounded_rect(square.position + Vector2(0, 5), square.size, 8.0, base.darkened(0.5))
-			_draw_rounded_rect(square.position, square.size, 8.0, base)
-			var bevel: Rect2 = square.grow(-7)
-			_draw_rounded_rect(bevel.position, bevel.size, 5.0, base.lightened(0.22))
-			draw_rect(Rect2(bevel.position + Vector2(0, bevel.size.y * 0.5), Vector2(bevel.size.x, bevel.size.y * 0.5)), base.darkened(0.12))
-			draw_rect(Rect2(bevel.position.x, bevel.end.y - 5.0, 5.0, 5.0), base)
-			draw_rect(Rect2(bevel.end.x - 5.0, bevel.end.y - 5.0, 5.0, 5.0), base)
-			draw_circle(bevel.position + Vector2(5, bevel.size.y - 5), 5.0, base.darkened(0.12))
-			draw_circle(bevel.end + Vector2(-5, -5), 5.0, base.darkened(0.12))
-			draw_line(bevel.position + Vector2(3, bevel.size.y * 0.5), Vector2(bevel.end.x - 3, bevel.position.y + bevel.size.y * 0.5), base.darkened(0.28), 1.0)
-			draw_arc(square.get_center(), 18.0, -PI * 0.95, -PI * 0.05, 24, base.lightened(0.35), 2.0, true)
-			var inset: float = 12.0
-			var x_color_light: Color = Color(base.lightened(0.30), 0.55)
-			draw_line(square.position + Vector2(inset + 1.2, inset + 1.2), square.end - Vector2(inset - 1.2, inset - 1.2), x_color_light, 6.0)
-			draw_line(Vector2(square.end.x - inset + 1.2, square.position.y + inset + 1.2), Vector2(square.position.x + inset + 1.2, square.end.y - inset + 1.2), x_color_light, 6.0)
-			draw_line(square.position + Vector2(inset, inset), square.end - Vector2(inset, inset), base.darkened(0.55), 4.5)
-			draw_line(Vector2(square.end.x - inset, square.position.y + inset), Vector2(square.position.x + inset, square.end.y - inset), base.darkened(0.55), 4.5)
+		_draw_piece_at(encoded, center + shift, 1.0, 0.0)
 	if height > 2:
 		var badge_center: Vector2 = rect.position + Vector2(CELL - 15, 15)
 		draw_circle(badge_center, 11, Color(0.15, 0.10, 0.06, 0.75))
 		draw_arc(badge_center, 9.5, 0.0, TAU, 24, Color("#f3e8ca", 0.75), 1.0)
 		draw_string(ThemeDB.fallback_font, rect.position + Vector2(CELL - 20, 20), str(height), HORIZONTAL_ALIGNMENT_CENTER, 10, 13, Color.WHITE)
 
-func _draw_transformed_ellipse(center: Vector2, radius: float, scale: Vector2, color: Color) -> void:
-	draw_set_transform(center, 0.0, scale)
-	draw_circle(Vector2.ZERO, radius, color)
+func _draw_piece_at(encoded: int, center: Vector2, scale: float, shadow_depth: float) -> void:
+	_piece_scale = scale
+	_piece_center = center
+	draw_set_transform(center, 0.0, Vector2(scale, scale))
+	_draw_piece_local(encoded, shadow_depth)
 	draw_set_transform(Vector2.ZERO, 0.0, Vector2.ONE)
+
+var _piece_scale: float = 1.0
+var _piece_center: Vector2 = Vector2.ZERO
+
+func _local_ellipse(local_pos: Vector2, radius: float, squash: float, color: Color) -> void:
+	draw_set_transform(_piece_center + _piece_scale * local_pos, 0.0, Vector2(_piece_scale, _piece_scale * squash))
+	draw_circle(Vector2.ZERO, radius, color)
+	draw_set_transform(_piece_center, 0.0, Vector2(_piece_scale, _piece_scale))
+
+func _draw_piece_local(encoded: int, shadow_depth: float) -> void:
+	var owner: int = int(encoded / 3)
+	var kind: int = encoded % 3
+	var base: Color = LIGHT_COLOR if owner == 0 else DARK_COLOR
+	var fade: float = 1.0 - shadow_depth * 0.35
+	if kind == TakState.FLAT:
+		var radius: float = 34.0
+		_local_ellipse(Vector2(5, 8), radius + 2.0, 0.5, Color(0.20, 0.13, 0.06, 0.30 * fade))
+		draw_circle(Vector2(0, 5), radius, base.darkened(0.55))
+		draw_circle(Vector2.ZERO, radius, base)
+		var toward_light: Vector2 = Vector2(-1, -1).normalized()
+		for i: int in range(8):
+			var amount: float = float(i) / 7.0
+			draw_circle(toward_light * float(i) * 1.2, radius - float(i) * 3.4, base.lightened(0.28).lerp(base, amount))
+		_local_ellipse(Vector2(-radius * 0.38, -radius * 0.42), 9.0, 0.62, Color(1.0, 1.0, 0.95, 0.35))
+		draw_arc(Vector2.ZERO, radius - 1.5, PI * 0.10, PI * 0.90, 24, base.darkened(0.5), 2.0, true)
+	elif kind == TakState.WALL:
+		var face: Rect2 = Rect2(Vector2(-19, -32), Vector2(38, 64))
+		_local_ellipse(Vector2(4, 6), 22.0, 0.38, Color(0.20, 0.13, 0.06, 0.30 * fade))
+		_draw_rounded_rect(face.position + Vector2(5, 0), face.size, 8.0, base.darkened(0.55))
+		_draw_rounded_rect(face.position, face.size, 8.0, base)
+		var face_w: float = face.size.x
+		for slice: int in range(6):
+			var tx: float = (float(slice) + 0.5) / 6.0
+			var shade: float = 1.0 - 0.45 * absf(tx - 0.3)
+			var slice_color: Color = base.lightened(0.30).lerp(base.darkened(0.40), 1.0 - shade)
+			var slice_rect: Rect2 = Rect2(face.position + Vector2(face_w * float(slice) / 6.0, 8.0), Vector2(face_w / 6.0 + 0.25, face.size.y - 16.0))
+			draw_rect(slice_rect, slice_color)
+		draw_line(face.position + Vector2(3, 3), face.position + Vector2(face_w - 3, 3), Color(base.lightened(0.4), 0.5), 2.0)
+	else:
+		var square: Rect2 = Rect2(Vector2(-28, -28), Vector2(56, 56))
+		_local_ellipse(Vector2(4, 7), 33.0, 0.45, Color(0.20, 0.13, 0.06, 0.30 * fade))
+		_draw_rounded_rect(square.position + Vector2(0, 5), square.size, 8.0, base.darkened(0.5))
+		_draw_rounded_rect(square.position, square.size, 8.0, base)
+		var bevel: Rect2 = square.grow(-7)
+		_draw_rounded_rect(bevel.position, bevel.size, 5.0, base.lightened(0.22))
+		draw_rect(Rect2(bevel.position + Vector2(0, bevel.size.y * 0.5), Vector2(bevel.size.x, bevel.size.y * 0.5)), base.darkened(0.12))
+		draw_rect(Rect2(bevel.position.x, bevel.end.y - 5.0, 5.0, 5.0), base)
+		draw_rect(Rect2(bevel.end.x - 5.0, bevel.end.y - 5.0, 5.0, 5.0), base)
+		draw_circle(bevel.position + Vector2(5, bevel.size.y - 5), 5.0, base.darkened(0.12))
+		draw_circle(bevel.end + Vector2(-5, -5), 5.0, base.darkened(0.12))
+		draw_line(bevel.position + Vector2(3, bevel.size.y * 0.5), Vector2(bevel.end.x - 3, bevel.position.y + bevel.size.y * 0.5), base.darkened(0.28), 1.0)
+		draw_arc(square.get_center(), 18.0, -PI * 0.95, -PI * 0.05, 24, base.lightened(0.35), 2.0, true)
+		var inset: float = 12.0
+		var corner_a: Vector2 = Vector2(-28, -28)
+		var corner_b: Vector2 = Vector2(28, 28)
+		var off_l: Vector2 = Vector2(inset + 1.2, inset + 1.2)
+		var x_color_light: Color = Color(base.lightened(0.30), 0.55)
+		draw_line(corner_a + off_l, corner_b - off_l, x_color_light, 6.0)
+		draw_line(Vector2(corner_b.x - off_l.x, corner_a.y + off_l.y), Vector2(corner_a.x + off_l.x, corner_b.y - off_l.y), x_color_light, 6.0)
+		draw_line(corner_a + Vector2(inset, inset), corner_b - Vector2(inset, inset), base.darkened(0.55), 4.5)
+		draw_line(Vector2(corner_b.x - inset, corner_a.y + inset), Vector2(corner_a.x + inset, corner_b.y - inset), base.darkened(0.55), 4.5)
 
 func _draw_rounded_rect(position: Vector2, size: Vector2, corner_radius: float, color: Color) -> void:
 	var radius: float = minf(corner_radius, minf(size.x, size.y) * 0.5)
@@ -234,7 +341,7 @@ func _build_hud() -> void:
 	_add_label("Towers never move — click a blue TOPPLE ray to fell one; stones land alternating on empty or enemy tops.", Vector2(665, 341), Vector2(390, 60), 14, Color("#51473d"))
 	_add_label("Walls never move and nothing stacks on a wall or capstone; only a lone capstone may flatten an ENEMY wall.", Vector2(665, 409), Vector2(390, 60), 14, Color("#51473d"))
 	_add_label("Win: connect ANY two opposite sides with one chain. Either direction wins for either player.", Vector2(665, 477), Vector2(400, 60), 14, Color("#51473d"))
-	_add_label("Click an empty square to place. F/W/C select stone; Esc clears selection.", Vector2(665, 541), Vector2(390, 48), 14, Color("#51473d"))
+	_add_label("The pulsing orange ring marks the cells of the last move. F/W/C select stone; Esc clears selection.", Vector2(665, 541), Vector2(390, 48), 14, Color("#51473d"))
 
 func _add_label(text: String, position: Vector2, size: Vector2, font_size: int, color: Color) -> Label:
 	var label: Label = Label.new()
@@ -327,7 +434,10 @@ func _select_stack(cell: int) -> void:
 func _commit_move(move: Dictionary) -> void:
 	undo_states.append(state.clone())
 	undo_actors.append(state.current)
+	undo_visuals.append({"indicator": indicator_cells.duplicate(), "entries": anim_entries.duplicate(true), "time": anim_time, "length": anim_length})
+	var plan: Dictionary = _build_plan(move)
 	state.apply_move(move)
+	_start_animation(plan)
 	_clear_selection()
 	queue_redraw()
 	_start_bot_if_needed()
@@ -346,8 +456,14 @@ func _undo() -> void:
 		return
 	var last_actor: int = undo_actors.pop_back()
 	state = undo_states.pop_back()
+	var visual: Dictionary = undo_visuals.pop_back()
+	indicator_cells = visual["indicator"]
+	anim_entries = visual["entries"]
+	anim_time = visual["time"]
+	anim_length = visual["length"]
 	if mode == 0 and last_actor == 1 and not undo_states.is_empty():
 		undo_actors.pop_back()
+		undo_visuals.pop_back()
 		state = undo_states.pop_back()
 	_clear_selection()
 	queue_redraw()
@@ -357,6 +473,9 @@ func _new_game() -> void:
 	state = TakState.new()
 	undo_states.clear()
 	undo_actors.clear()
+	undo_visuals.clear()
+	anim_entries = []
+	indicator_cells = []
 	bot_thinking = false
 	active_bot = -1
 	_clear_selection()

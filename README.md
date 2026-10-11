@@ -27,6 +27,7 @@ godot --path .
 
 - Click an empty square to place; **F / W / C** (or the Place Tool buttons) select flat / wall / capstone
 - Click one of your single stones → green neighbors appear → click one to move it
+- Every move is animated: stones glide in an arc, toppled towers fan out stone by stone, placements pop in; the cells of the last move pulse with an orange ring until the next move
 - Click one of your towers → blue TOPPLE rays appear → click any ray cell to fell the tower (orange-capped cell marks the far end of each ray)
 - **Undo** (or Ctrl+Z), **New Game**, and a **Human vs Bot / Hotseat / Bot vs Bot** switch live in the top bar — Bot vs Bot lets you spectate two MCTS players
 - Entering a wall with a lone capstone is labeled `FLATTEN`
