@@ -38,6 +38,7 @@ var THEME_TEXT: Color = Color("#3e3524")
 var THEME_HOVER_TEXT: Color = Color("#233a35")
 var THEME_PRESSED_TEXT: Color = Color("#f2e9d4")
 var THEME_DISABLED_TEXT: Color = Color("#a29075")
+var DECO_LINE: Color = Color(0.30, 0.24, 0.08, 0.16)
 const STONE_FLIGHT: float = 0.28
 const SFX_PLACE = preload("res://assets/sounds/place.wav")
 const SFX_MOVE = preload("res://assets/sounds/move.wav")
@@ -270,6 +271,7 @@ func _draw() -> void:
 		var y: int = int(cell / 5)
 		var rect: Rect2 = Rect2(BOARD_ORIGIN + Vector2(x * CELL, y * CELL), Vector2(CELL, CELL))
 		draw_rect(rect, SAGE_A if (x + y) % 2 == 0 else SAGE_B)
+		_draw_deco_motif(rect, (x + y) % 2 == 0)
 		if cell in legal_destinations:
 			draw_rect(rect.grow(-7), LEGAL_HI)
 			if selected_from >= 0 and state.piece_type(cell) == TakState.WALL and int(state.heights[selected_from]) == 1 and state.piece_type(selected_from) == TakState.CAPSTONE:
@@ -387,6 +389,20 @@ func _lily(center: Vector2, size: float) -> void:
 		_leaf(center, ang, size * 2.4, Color(GOLD, 0.25))
 	draw_circle(center, size * 0.32, GOLD)
 	draw_arc(center, size * 2.35, -PI * 0.9, -PI * 0.1, 20, Color(TEAL, 0.7), 1.6, true)
+
+func _draw_deco_motif(rect: Rect2, low_cell: bool) -> void:
+	var origin: Vector2 = rect.position if not low_cell else rect.end
+	var base_angle: float = 0.0 if not low_cell else PI
+	var radius: float = CELL * 0.44
+	for i: int in range(7):
+		var angle: float = base_angle + (float(i) / 6.0) * PI * 0.5
+		draw_line(origin, origin + Vector2(cos(angle), sin(angle)) * radius, DECO_LINE, 1.2)
+	for k: float in [0.34, 0.67, 1.0]:
+		draw_arc(origin, radius * k, base_angle, base_angle + PI * 0.5, 12, DECO_LINE, 1.0, true)
+	var nub: float = 5.0
+	var sign_v: Vector2 = Vector2(1, 1) if not low_cell else Vector2(-1, -1)
+	draw_rect(Rect2(origin, sign_v * nub * 2.0).abs(), Color(DECO_LINE, DECO_LINE.a * 0.8), false, 1.0)
+	draw_rect(Rect2(origin, sign_v * nub).abs(), Color(DECO_LINE, DECO_LINE.a * 0.8), false, 1.0)
 
 func _draw_stack(cell: int, rect: Rect2) -> void:
 	var height: int = int(state.heights[cell])
@@ -839,6 +855,7 @@ func _apply_palette() -> void:
 		THEME_HOVER_TEXT = Color("#eeddb0")
 		THEME_PRESSED_TEXT = Color("#101410")
 		THEME_DISABLED_TEXT = Color("#6c6850")
+		DECO_LINE = Color(0.85, 0.72, 0.35, 0.09)
 	else:
 		LIGHT_COLOR = Color("#f5ecd4")
 		DARK_COLOR = Color("#1d5c55")
@@ -873,6 +890,7 @@ func _apply_palette() -> void:
 		THEME_HOVER_TEXT = Color("#233a35")
 		THEME_PRESSED_TEXT = Color("#f2e9d4")
 		THEME_DISABLED_TEXT = Color("#a29075")
+		DECO_LINE = Color(0.30, 0.24, 0.08, 0.16)
 	if is_instance_valid(hud):
 		app_theme = _make_nouveau_theme()
 		hud.theme = app_theme
