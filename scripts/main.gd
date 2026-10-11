@@ -51,7 +51,10 @@ const TOPPLE_STAGGER: float = 0.09
 const PLACE_POP: float = 0.22
 
 var state: TakState = TakState.new()
-var bots: Array[MctsBot] = [MctsBot.new(), MctsBot.new()]
+var bots: Array[TakBrains] = [TakBrains.new(), TakBrains.new()]
+var current_brain: int = 0
+var brain_popup: Control
+var brain_radios: Array[CheckButton] = []
 var mode: int = 0
 var bot_thinking: bool = false
 var active_bot: int = -1
@@ -73,7 +76,7 @@ var clock: float = 0.0
 var hud: Control
 var app_theme: Theme
 var dark_mode: bool = false
-var rules: Array[bool] = [false, false, false]
+var rules: Array[bool] = [false, false, false, false, false]
 var role_labels: Array[Dictionary] = []
 var rule_popup: Control
 var rule_checks: Array[CheckButton] = []
@@ -82,6 +85,7 @@ var topple_label: Label
 var wall_label: Label
 var win_label: Label
 var house_list_label: Label
+var hint_label: Label
 var house_note_label: Label
 var status_label: Label
 var reserve_label: Label
@@ -155,7 +159,7 @@ func _process(delta: float) -> void:
 			anim_entries = []
 		queue_redraw()
 	if bot_thinking:
-		var bot: MctsBot = bots[active_bot]
+		var bot: TakBrains = bots[active_bot]
 		bot.tick()
 		status_label.text = "Bot %s thinking... %d playouts" % ["A" if active_bot == 0 else "B", bot.playouts]
 		undo_button.disabled = true
@@ -534,6 +538,8 @@ func _make_nouveau_theme() -> Theme:
 	theme.set_color("font_color", "CheckBox", THEME_TEXT)
 	theme.set_color("font_hover_color", "CheckBox", THEME_HOVER_TEXT)
 	theme.set_color("font_pressed_color", "CheckBox", THEME_HOVER_TEXT)
+	theme.set_color("font_hover_color", "CheckBox", THEME_HOVER_TEXT)
+	theme.set_color("font_focus_color", "CheckBox", THEME_HOVER_TEXT)
 	return theme
 
 func _build_hud() -> void:
@@ -560,29 +566,35 @@ func _build_hud() -> void:
 	undo_button.pressed.connect(_undo)
 	var fresh: Button = _add_button("New Game", Vector2(828, 24), Vector2(72, 34))
 	fresh.pressed.connect(_new_game)
-	var house: Button = _add_button("House Rules", Vector2(908, 24), Vector2(100, 34))
-	house.pressed.connect(_toggle_rule_popup)
-	var dark: Button = _add_button("Dark", Vector2(1016, 24), Vector2(56, 34))
-	dark.name = "DarkButton"
-	dark.pressed.connect(_toggle_dark)
-	_add_label("PLACE TOOL", Vector2(665, 158), Vector2(160, 25), 15, "heading")
+
+	_add_label("PLACE TOOL", Vector2(665, 106), Vector2(160, 25), 15, "heading")
 	for type: int in range(3):
 		var labels: Array[String] = ["Flat  F", "Wall  W", "Cap  C"]
-		var button: Button = _add_button(labels[type], Vector2(665 + type * 96, 188), Vector2(88, 38))
+		var button: Button = _add_button(labels[type], Vector2(665 + type * 96, 134), Vector2(88, 38))
 		button.toggle_mode = true
 		button.button_pressed = type == piece_choice
 		button.pressed.connect(_on_tool_pressed.bind(type))
 		tool_buttons.append(button)
-	_add_label("ACTIONS", Vector2(665, 263), Vector2(150, 25), 15, "heading")
-	move_label = _add_label("", Vector2(665, 291), Vector2(435, 44), 14, "help")
-	topple_label = _add_label("", Vector2(665, 337), Vector2(435, 60), 14, "help")
-	wall_label = _add_label("", Vector2(665, 399), Vector2(435, 60), 14, "help")
-	win_label = _add_label("", Vector2(665, 461), Vector2(435, 60), 14, "help")
-	_add_label("Pulsing ring marks the last move. F/W/C select stone; Esc clears selection; M mutes.", Vector2(665, 523), Vector2(435, 44), 14, "help")
-	house_list_label = _add_label("", Vector2(665, 573), Vector2(435, 24), 14, "heading")
-	house_note_label = _add_label("Rules marked * are house rules (House Rules button).", Vector2(665, 599), Vector2(435, 24), 12, "help")
+	_add_label("ACTIONS", Vector2(665, 190), Vector2(150, 25), 15, "heading")
+	move_label = _add_label("", Vector2(665, 218), Vector2(425, 44), 13, "help")
+	topple_label = _add_label("", Vector2(665, 246), Vector2(425, 60), 13, "help")
+	wall_label = _add_label("", Vector2(665, 280), Vector2(425, 60), 13, "help")
+	win_label = _add_label("", Vector2(665, 320), Vector2(425, 60), 13, "help")
+	hint_label = _add_label("Pulsing ring = last move. F/W/C stone; Esc clears; M mutes.", Vector2(665, 360), Vector2(425, 44), 13, "help")
+	house_list_label = _add_label("", Vector2(665, 396), Vector2(425, 40), 13, "heading")
+	house_note_label = _add_label("Rules marked * are house rules (House Rules button).", Vector2(665, 428), Vector2(425, 30), 12, "help")
 	house_note_label.visible = false
+	var house: Button = _add_button("House Rules", Vector2(665, 646), Vector2(110, 36))
+	house.pressed.connect(_toggle_rule_popup)
+	var brains: Button = _add_button("Bot Brains", Vector2(785, 646), Vector2(100, 36))
+	brains.pressed.connect(_toggle_brain_popup)
+	var dark: Button = _add_button("Dark", Vector2(895, 646), Vector2(64, 36))
+	dark.name = "DarkButton"
+	dark.pressed.connect(_toggle_dark)
+	for wrap_label: Label in [move_label, topple_label, wall_label, win_label, hint_label, house_list_label, house_note_label]:
+		wrap_label.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
 	_build_rule_popup()
+	_build_brain_popup()
 	_refresh_rule_text()
 
 func _role_color(role: String) -> Color:
@@ -619,60 +631,141 @@ func _add_button(text: String, position: Vector2, size: Vector2) -> Button:
 
 func _build_rule_popup() -> void:
 	rule_popup = Panel.new()
-	rule_popup.position = Vector2(150, 190)
-	rule_popup.size = Vector2(400, 316)
+	rule_popup.position = Vector2(110, 150)
+	rule_popup.size = Vector2(440, 400)
 	rule_popup.visible = false
 	rule_popup.mouse_filter = Control.MOUSE_FILTER_STOP
 	hud.add_child(rule_popup)
 	var title: Label = Label.new()
 	title.text = "HOUSE RULES"
-	title.position = Vector2(0, 14)
-	title.size = Vector2(380, 30)
+	title.position = Vector2(0, 12)
+	title.size = Vector2(440, 30)
 	title.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
 	title.add_theme_font_size_override("font_size", 20)
 	title.add_theme_color_override("font_color", TEXT_INK)
 	role_labels.append({"l": title, "r": "ink"})
 	rule_popup.add_child(title)
-	var names: Array[String] = ["Walls block all paths", "Topple towers with opposing top color", "Bi-directional win paths"]
-	for i: int in range(3):
+	var names: Array[String] = ["Walls block all paths", "Topple towers with opposing top color", "Bi-directional win paths", "Top piece can slide off towers", "Walls can move one space like tiles"]
+	for i: int in range(5):
 		var check: CheckButton = CheckButton.new()
 		check.text = names[i]
-		check.position = Vector2(20, 62 + i * 42)
-		check.size = Vector2(370, 36)
+		check.add_theme_font_size_override("font_size", 13)
+		check.position = Vector2(20, 52 + i * 38)
+		check.size = Vector2(400, 32)
 		check.button_pressed = rules[i]
 		check.toggled.connect(_on_rule_toggled.bind(i))
 		rule_popup.add_child(check)
 		rule_checks.append(check)
 	var note: Label = Label.new()
 	note.text = "Default: all OFF — classical play. Changes apply immediately, including mid-game."
-	note.position = Vector2(20, 202)
-	note.size = Vector2(370, 52)
+	note.position = Vector2(20, 252)
+	note.size = Vector2(400, 60)
+	note.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
 	note.add_theme_font_size_override("font_size", 12)
 	note.add_theme_color_override("font_color", TEXT_HELP)
 	role_labels.append({"l": note, "r": "help"})
 	rule_popup.add_child(note)
 	var close: Button = Button.new()
 	close.text = "Close"
-	close.position = Vector2(160, 264)
+	close.position = Vector2(180, 340)
 	close.size = Vector2(80, 32)
 	close.pressed.connect(func() -> void: rule_popup.visible = false)
 	rule_popup.add_child(close)
 
 func _toggle_rule_popup() -> void:
 	rule_popup.visible = not rule_popup.visible
+	brain_popup.visible = false
+
+func _toggle_brain_popup() -> void:
+	brain_popup.visible = not brain_popup.visible
+	rule_popup.visible = false
+
+func _build_brain_popup() -> void:
+	brain_popup = Panel.new()
+	brain_popup.position = Vector2(130, 170)
+	brain_popup.size = Vector2(420, 330)
+	brain_popup.visible = false
+	brain_popup.mouse_filter = Control.MOUSE_FILTER_STOP
+	hud.add_child(brain_popup)
+	var title: Label = Label.new()
+	title.text = "BOT BRAINS"
+	title.position = Vector2(0, 12)
+	title.size = Vector2(420, 30)
+	title.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
+	title.add_theme_font_size_override("font_size", 20)
+	title.add_theme_color_override("font_color", TEXT_INK)
+	role_labels.append({"l": title, "r": "ink"})
+	brain_popup.add_child(title)
+	var group: ButtonGroup = ButtonGroup.new()
+	group.allow_unpress = false
+	for i: int in range(5):
+		var radio: CheckButton = CheckButton.new()
+		radio.text = TakBrains.NAMES[i]
+		radio.button_group = group
+		radio.add_theme_font_size_override("font_size", 14)
+		radio.position = Vector2(24, 52 + i * 36)
+		radio.size = Vector2(200, 30)
+		radio.button_pressed = i == current_brain
+		radio.toggled.connect(_on_brain_selected.bind(i))
+		brain_popup.add_child(radio)
+		brain_radios.append(radio)
+	var desc: Array[String] = [
+		"steady MCTS search",
+		"blocks enemy wins, else Ralph",
+		"races the shortest road, else Ralph",
+		"defend, then attack, then Ralph",
+		"attack, then defend, then Ralph",
+	]
+	for i: int in range(5):
+		var line: Label = Label.new()
+		line.text = desc[i]
+		line.position = Vector2(232, 57 + i * 36)
+		line.size = Vector2(186, 26)
+		line.add_theme_font_size_override("font_size", 11)
+		line.add_theme_color_override("font_color", TEXT_HELP)
+		role_labels.append({"l": line, "r": "help"})
+		brain_popup.add_child(line)
+	var note: Label = Label.new()
+	note.text = "Applies to both bots from the next move, including live Bot vs Bot games. Every brain falls back to Ralph."
+	note.position = Vector2(20, 246)
+	note.size = Vector2(384, 44)
+	note.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
+	note.add_theme_font_size_override("font_size", 11)
+	note.add_theme_color_override("font_color", TEXT_HELP)
+	role_labels.append({"l": note, "r": "help"})
+	brain_popup.add_child(note)
+	var close: Button = Button.new()
+	close.text = "Close"
+	close.position = Vector2(170, 296)
+	close.size = Vector2(80, 30)
+	close.pressed.connect(func() -> void: brain_popup.visible = false)
+	brain_popup.add_child(close)
+
+func _on_brain_selected(pressed: bool, index: int) -> void:
+	if not pressed:
+		return
+	current_brain = index
+	for b: TakBrains in bots:
+		b.set_brain(index)
 
 func _on_rule_toggled(pressed: bool, index: int) -> void:
 	rules[index] = pressed
-	state.set_rules(rules[0], rules[1], rules[2])
+	state.set_rules(rules[0], rules[1], rules[2], rules[3], rules[4])
 	_refresh_rule_text()
 
 func _refresh_rule_text() -> void:
 	move_label.text = "Single stones move one space onto empty ground or an enemy stone."
-	if rules[1]:
-		topple_label.text = "Towers never move — topple your towers or enemy-topped ones (*); stones land alternating."
+	if rules[1] and rules[3]:
+		topple_label.text = "Towers never move — click next to slide the top stone; farther clicks fell 3+ towers, own or enemy-topped (*)."
+	elif rules[3]:
+		topple_label.text = "Towers never move — click next to slide the top stone; farther clicks fell your 3+ towers (*)."
+	elif rules[1]:
+		topple_label.text = "Towers never move — click a blue TOPPLE ray to fell your towers or enemy-topped ones (*)."
 	else:
 		topple_label.text = "Towers never move — click a blue TOPPLE ray to fell your towers; stones land alternating."
-	if rules[0]:
+	if rules[4]:
+		wall_label.text = "Walls slide like stones (*) and nothing stacks on a wall or capstone; only a lone capstone flattens an ENEMY wall."
+	elif rules[0]:
 		wall_label.text = "Walls never move; nothing stacks on walls or capstones; lone capstone flattens ENEMY walls. Walls break roads (*)."
 	else:
 		wall_label.text = "Walls never move; nothing stacks on walls or capstones; lone capstone flattens ENEMY walls. Own walls count in roads."
@@ -687,8 +780,22 @@ func _refresh_rule_text() -> void:
 		active.append("* Topple enemy-topped towers")
 	if rules[2]:
 		active.append("* Bi-directional win paths")
+	if rules[3]:
+		active.append("* Top stones can slide")
+	if rules[4]:
+		active.append("* Moving walls")
 	house_list_label.text = "  ".join(active)
 	house_note_label.visible = not active.is_empty()
+	_layout_help()
+
+func _layout_help() -> void:
+	if not is_instance_valid(move_label):
+		return
+	var y: float = 218.0
+	for lbl: Label in [move_label, topple_label, wall_label, win_label, hint_label, house_list_label, house_note_label]:
+		lbl.position = Vector2(665, y)
+		lbl.size.x = 425.0
+		y += lbl.get_combined_minimum_size().y + 4.0
 
 func _toggle_dark() -> void:
 	dark_mode = not dark_mode
@@ -896,7 +1003,7 @@ func _undo() -> void:
 
 func _new_game() -> void:
 	state = TakState.new()
-	state.set_rules(rules[0], rules[1], rules[2])
+	state.set_rules(rules[0], rules[1], rules[2], rules[3], rules[4])
 	_refresh_rule_text()
 	undo_states.clear()
 	undo_actors.clear()

@@ -22,6 +22,10 @@ func _initialize() -> void:
 	_test_random_move_sampler()
 	await _test_ui_flow()
 	_test_spectate_bots()
+	_test_rule_top_slide()
+	_test_rule_wall_move()
+	_test_stalemate_guard()
+	_test_brains()
 	_test_mcts()
 	print("RESULT=%d_passed,%d_failed" % [passed, failed])
 	quit(0 if failed == 0 else 1)
@@ -242,22 +246,22 @@ func _test_roads() -> void:
 		_put(hdark, 10 + x, 1, TakState.FLAT)
 	_check("side-based: Light vertical is NOT a road", not vlight.road_exists(0), "default rules let Light win vertically")
 	_check("side-based: Dark horizontal is NOT a road", not hdark.road_exists(1), "default rules let Dark win horizontally")
-	vlight.set_rules(true, false, true)
-	hdark.set_rules(true, false, true)
+	vlight.set_rules(true, false, true, false, false)
+	hdark.set_rules(true, false, true, false, false)
 	_check("bidirectional house rule enables either direction", vlight.road_exists(0) and hdark.road_exists(1), "bidirectional flag not applied")
 	var wrow: TakState = _normal_state()
-	wrow.set_rules(false, false, true)
+	wrow.set_rules(false, false, true, false, false)
 	for x: int in range(5):
 		_put(wrow, 10 + x, 0, TakState.FLAT if x != 2 else TakState.WALL)
 	var wblock: TakState = wrow.clone()
-	wblock.set_rules(true, false, true)
+	wblock.set_rules(true, false, true, false, false)
 	_check("walls-in-road house rule counts own walls", wrow.road_exists(0) and not wblock.road_exists(0), "walls_block flag not applied to roads")
 	var et: TakState = _normal_state()
 	et.current = 0
 	_put(et, 10, 0, TakState.FLAT)
 	_put(et, 10, 1, TakState.FLAT)
 	var et_on: TakState = et.clone()
-	et_on.set_rules(true, true, false)
+	et_on.set_rules(true, true, false, false, false)
 	var own_only: bool = et.topple_landing_cells(10, 0).is_empty()
 	var enemy_top: bool = not et_on.topple_landing_cells(10, 0).is_empty()
 	_check("enemy-top topple gated by house rule", own_only and enemy_top, "topple_enemy_top flag wrong")
@@ -380,6 +384,126 @@ func _seeded_midgame_state() -> TakState:
 	for cell: int in [1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 13, 14, 15, 16, 17]:
 		state.apply_move({"kind": "place", "cell": cell, "piece_type": TakState.FLAT if cell % 2 == 0 else TakState.WALL})
 	return state
+
+func _test_rule_top_slide() -> void:
+	var st: TakState = _normal_state()
+	st.current = 0
+	_put(st, 12, 1, TakState.FLAT)
+	_put(st, 12, 0, TakState.FLAT)
+	_check("top slide OFF by default: no peel", not st.is_legal({"kind": "peel", "from": 12, "dir": 0}), "peel offered by default")
+	st.set_rules(false, false, false, true, false)
+	var dest: int = st.peel_landing(12, 0)
+	st.apply_move({"kind": "peel", "from": 12, "dir": 0})
+	var ok: bool = dest == 13 and int(st.heights[12]) == 1 and st.piece_owner(12) == 1 and int(st.heights[13]) == 1 and st.piece_owner(13) == 0
+	_check("top slide ON: top stone slides one space", ok, "peel move wrong")
+	var t2: TakState = _normal_state()
+	t2.current = 0
+	t2.set_rules(false, false, false, true, false)
+	_put(t2, 10, 1, TakState.FLAT)
+	_put(t2, 10, 0, TakState.FLAT)
+	_check("2-tall tower cannot topple with slide ON", t2.topple_landing_cells(10, 0).is_empty(), "2-tall topple allowed with slide rule")
+	var peels: int = 0
+	for m: Dictionary in t2.legal_moves():
+		if str(m.get("kind", "")) == "peel":
+			peels += 1
+	_check("legal_moves enumerates peels", peels > 0, "peels missing from legal_moves")
+
+func _test_rule_wall_move() -> void:
+	var st: TakState = _normal_state()
+	st.current = 0
+	_put(st, 12, 0, TakState.WALL)
+	_put(st, 13, 1, TakState.FLAT)
+	_check("walls frozen by default", not st.is_legal({"kind": "move", "from": 12, "carry": 1, "dir": 0, "drops": [1]}), "wall moved without rule")
+	st.set_rules(false, false, false, false, true)
+	var onto_empty: bool = st.is_legal({"kind": "move", "from": 12, "carry": 1, "dir": 3, "drops": [1]})
+	var onto_enemy: bool = st.is_legal({"kind": "move", "from": 12, "carry": 1, "dir": 0, "drops": [1]})
+	st.apply_move({"kind": "move", "from": 12, "carry": 1, "dir": 0, "drops": [1]})
+	var landed: bool = int(st.heights[13]) == 2 and st.piece_type(13) == TakState.WALL
+	_check("moving walls slide onto empty and enemy flats", onto_empty and onto_enemy and landed and int(st.heights[12]) == 0, "wall move wrong")
+	_check("wall cannot land on capstone or own top", not st.is_legal({"kind": "move", "from": 13, "carry": 1, "dir": 2, "drops": [1]}), "illegal wall landing accepted")
+
+func _test_stalemate_guard() -> void:
+	var st: TakState = _normal_state()
+	st.set_rules(false, false, false, true, false)
+	st.reserve_flats = PackedInt32Array([0, 0])
+	st.reserve_caps = PackedInt32Array([0, 0])
+	_put(st, 10, 0, TakState.FLAT)
+	_put(st, 10, 1, TakState.FLAT)
+	_put(st, 20, 1, TakState.FLAT)
+	_put(st, 20, 0, TakState.FLAT)
+	var rng: RandomNumberGenerator = RandomNumberGenerator.new()
+	rng.seed = 3
+	var plies: int = 0
+	while not st.over and plies < 300:
+		var mv: Dictionary = st.random_move(rng)
+		if mv.is_empty():
+			break
+		st.apply_move(mv)
+		plies += 1
+	_check("stalemate guard ends churn games by count", st.over and (plies <= 125 or st.winner >= 0), "churn did not terminate in %d plies" % plies)
+
+func _test_brains() -> void:
+	var brains = load("res://scripts/tak_brains.gd")
+	var win_state: TakState = _normal_state()
+	win_state.current = 0
+	for cell: int in [6, 7, 8, 9]:
+		_put(win_state, cell, 0, TakState.FLAT)
+	for b: int in [1, 2, 3, 4]:
+		var brain = brains.new()
+		brain.set_brain(b)
+		brain.budget_seconds = 0.4
+		brain.start_thinking(win_state.clone())
+		while not brain.is_done():
+			brain.tick()
+		var mv: Dictionary = brain.get_move()
+		var sim: TakState = win_state.clone()
+		var found_win: bool = brain != null and win_state.is_legal(mv)
+		if found_win:
+			sim.apply_move(mv)
+			found_win = sim.over and sim.winner == 0
+		_check("brain %s takes the immediate win" % str(brains.NAMES[b]), found_win, "move=%s" % str(mv))
+	var threat: TakState = _normal_state()
+	threat.current = 0
+	for cell: int in [0, 5, 10, 15]:
+		_put(threat, cell, 1, TakState.FLAT)
+	_put(threat, 22, 0, TakState.FLAT)
+	var dbrain = brains.new()
+	dbrain.set_brain(1)
+	dbrain.budget_seconds = 0.5
+	dbrain.start_thinking(threat.clone())
+	while not dbrain.is_done():
+		dbrain.tick()
+	var block_move: Dictionary = dbrain.get_move()
+	var blocked: bool = threat.is_legal(block_move)
+	if blocked:
+		var after: TakState = threat.clone()
+		after.apply_move(block_move)
+		var opp: TakState = after.clone()
+		opp.current = 1
+		for om: Dictionary in opp.legal_moves():
+			var chk: TakState = opp.clone()
+			chk.apply_move(om)
+			if chk.over and chk.winner == 1:
+				blocked = false
+				break
+	_check("Defensive blocks the enemy road win", blocked, "move=%s" % str(block_move))
+	var open_state: TakState = _normal_state()
+	open_state.current = 0
+	_put(open_state, 12, 0, TakState.FLAT)
+	var obrain = brains.new()
+	obrain.set_brain(2)
+	obrain.budget_seconds = 0.5
+	obrain.start_thinking(open_state.clone())
+	while not obrain.is_done():
+		obrain.tick()
+	_check("Offensive plays a legal move on open board", open_state.is_legal(obrain.get_move()), "bad move")
+	var rbrain = brains.new()
+	rbrain.set_brain(0)
+	rbrain.budget_seconds = 0.3
+	rbrain.start_thinking(open_state.clone())
+	while not rbrain.is_done():
+		rbrain.tick()
+	_check("Ralph brain delegates to MCTS legally", open_state.is_legal(rbrain.get_move()) and rbrain.playouts > 50, "ralph brain broken")
 
 func _test_mcts() -> void:
 	var opening: TakState = TakState.new()

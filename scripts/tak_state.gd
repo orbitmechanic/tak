@@ -28,13 +28,17 @@ var _has_trusted_random_move: bool = false
 const RULE_WALLS_BLOCK: int = 1
 const RULE_TOPPLE_ENEMY_TOP: int = 2
 const RULE_BIDIRECTIONAL: int = 4
+const RULE_TOP_MOVE: int = 8
+const RULE_WALLS_MOVE: int = 16
 var rule_flags: int = 0
 var current: int = 0
 var over: bool = false
 var winner: int = -1
 var turn_number: int = 0
+var since_progress: int = 0
+var occ_high: int = 0
 
-func set_rules(walls_block: bool, topple_enemy_top: bool, bidirectional: bool) -> void:
+func set_rules(walls_block: bool, topple_enemy_top: bool, bidirectional: bool, top_move: bool, walls_move: bool) -> void:
 	rule_flags = 0
 	if walls_block:
 		rule_flags |= RULE_WALLS_BLOCK
@@ -42,10 +46,14 @@ func set_rules(walls_block: bool, topple_enemy_top: bool, bidirectional: bool) -
 		rule_flags |= RULE_TOPPLE_ENEMY_TOP
 	if bidirectional:
 		rule_flags |= RULE_BIDIRECTIONAL
+	if top_move:
+		rule_flags |= RULE_TOP_MOVE
+	if walls_move:
+		rule_flags |= RULE_WALLS_MOVE
 	_mark_road_masks_dirty()
 
 func get_rules() -> Array[bool]:
-	return [(rule_flags & RULE_WALLS_BLOCK) != 0, (rule_flags & RULE_TOPPLE_ENEMY_TOP) != 0, (rule_flags & RULE_BIDIRECTIONAL) != 0]
+	return [(rule_flags & RULE_WALLS_BLOCK) != 0, (rule_flags & RULE_TOPPLE_ENEMY_TOP) != 0, (rule_flags & RULE_BIDIRECTIONAL) != 0, (rule_flags & RULE_TOP_MOVE) != 0, (rule_flags & RULE_WALLS_MOVE) != 0]
 
 func _counts_in_road(piece: int) -> bool:
 	if piece == FLAT or piece == CAPSTONE:
@@ -80,6 +88,8 @@ func clone() -> TakState:
 	result.over = over
 	result.winner = winner
 	result.turn_number = turn_number
+	result.since_progress = since_progress
+	result.occ_high = occ_high
 	return result
 
 func piece_owner(cell: int, layer: int = -1) -> int:
@@ -194,6 +204,26 @@ func flats_count(player: int) -> int:
 			total += 1
 	return total
 
+func _landing_legal(destination: int, stone_type: int, stone_owner: int) -> bool:
+	var top: int = piece_type(destination)
+	if top == CAPSTONE:
+		return false
+	if top == WALL:
+		return stone_type == CAPSTONE and piece_owner(destination) != current
+	if top == FLAT:
+		return piece_owner(destination) != current
+	return true
+
+func _stone_movable(stone_type: int) -> bool:
+	if stone_type == WALL:
+		return (rule_flags & RULE_WALLS_MOVE) != 0
+	return true
+
+func _top_peelable(stone_type: int) -> bool:
+	if (rule_flags & RULE_TOP_MOVE) == 0:
+		return false
+	return _stone_movable(stone_type)
+
 func _stone_move_legal(origin: int, direction: int) -> bool:
 	if over or opening_done[current] == 0:
 		return false
@@ -204,26 +234,37 @@ func _stone_move_legal(origin: int, direction: int) -> bool:
 	var stone: int = int(cells[origin * MAX_STACK])
 	var stone_owner: int = int(stone / 3)
 	var stone_type: int = stone % 3
-	if stone_owner != current or stone_type == WALL:
+	if stone_owner != current or not _stone_movable(stone_type):
 		return false
 	var destination: int = _neighbor(origin, direction, 1)
 	if destination < 0:
 		return false
-	var top: int = piece_type(destination)
-	if top == CAPSTONE:
-		return false
-	if top == WALL:
-		return stone_type == CAPSTONE and piece_owner(destination) != current
-	if top == FLAT:
-		return piece_owner(destination) != current
-	return true
+	return _landing_legal(destination, stone_type, stone_owner)
+
+func peel_landing(origin: int, direction: int) -> int:
+	if over or opening_done[current] == 0 or origin < 0 or origin >= CELL_COUNT or direction < 0 or direction > 3:
+		return -1
+	if int(heights[origin]) < 2:
+		return -1
+	var stone: int = int(cells[origin * MAX_STACK + int(heights[origin]) - 1])
+	var stone_owner: int = int(stone / 3)
+	var stone_type: int = stone % 3
+	if stone_owner != current or not _top_peelable(stone_type):
+		return -1
+	var destination: int = _neighbor(origin, direction, 1)
+	if destination < 0:
+		return -1
+	if not _landing_legal(destination, stone_type, stone_owner):
+		return -1
+	return destination
 
 func topple_landing_cells(from: int, direction: int) -> Array[int]:
 	var result: Array[int] = []
 	if over or opening_done[current] == 0:
 		return result
 	var height: int = int(heights[from])
-	if height < 2:
+	var min_height: int = 3 if (rule_flags & RULE_TOP_MOVE) != 0 else 2
+	if height < min_height:
 		return result
 	if piece_owner(from) != current and (rule_flags & RULE_TOPPLE_ENEMY_TOP) == 0:
 		return []
@@ -269,10 +310,14 @@ func legal_moves() -> Array[Dictionary]:
 				for direction: int in range(4):
 					if _stone_move_legal(cell, direction):
 						moves.append({"kind": "move", "from": cell, "carry": 1, "dir": direction, "drops": [1]})
-		if int(heights[cell]) >= 2 and (piece_owner(cell) == current or (rule_flags & RULE_TOPPLE_ENEMY_TOP) != 0):
+		if int(heights[cell]) >= 2:
 			for direction: int in range(4):
-				if not topple_landing_cells(cell, direction).is_empty():
-					moves.append({"kind": "topple", "from": cell, "dir": direction})
+				if peel_landing(cell, direction) >= 0:
+					moves.append({"kind": "peel", "from": cell, "dir": direction})
+			if piece_owner(cell) == current or (rule_flags & RULE_TOPPLE_ENEMY_TOP) != 0:
+				for direction: int in range(4):
+					if not topple_landing_cells(cell, direction).is_empty():
+						moves.append({"kind": "topple", "from": cell, "dir": direction})
 	return moves
 
 func has_legal_move() -> bool:
@@ -290,10 +335,14 @@ func has_legal_move() -> bool:
 			for direction: int in range(4):
 				if _stone_move_legal(cell, direction):
 					return true
-		elif height >= 2 and (piece_owner(cell) == current or (rule_flags & RULE_TOPPLE_ENEMY_TOP) != 0):
+		elif height >= 2:
 			for direction: int in range(4):
-				if not topple_landing_cells(cell, direction).is_empty():
+				if peel_landing(cell, direction) >= 0:
 					return true
+			if piece_owner(cell) == current or (rule_flags & RULE_TOPPLE_ENEMY_TOP) != 0:
+				for direction: int in range(4):
+					if not topple_landing_cells(cell, direction).is_empty():
+						return true
 	return false
 
 func is_legal(move: Dictionary) -> bool:
@@ -315,6 +364,10 @@ func is_legal(move: Dictionary) -> bool:
 		if not move.has("from") or not move.has("dir"):
 			return false
 		return not topple_landing_cells(int(move["from"]), int(move["dir"])).is_empty()
+	if str(move["kind"]) == "peel":
+		if not move.has("from") or not move.has("dir"):
+			return false
+		return peel_landing(int(move["from"]), int(move["dir"])) >= 0
 	if str(move["kind"]) != "move" or not move.has("from") or not move.has("dir"):
 		return false
 	var origin: int = int(move["from"])
@@ -338,6 +391,8 @@ func apply_move(move: Dictionary) -> void:
 	if _road_masks_dirty:
 		_rebuild_road_masks()
 	var actor: int = current
+	var occ_before: int = _occupied_count
+	var made_progress: bool = false
 	if str(move["kind"]) == "place":
 		var cell: int = int(move["cell"])
 		var piece: int = int(move["piece_type"])
@@ -349,11 +404,21 @@ func apply_move(move: Dictionary) -> void:
 		else:
 			reserve_flats[owner] -= 1
 		opening_done[actor] = 1
+		made_progress = true
 	elif str(move["kind"]) == "topple":
 		_apply_topple(move)
+	elif str(move["kind"]) == "peel":
+		_apply_peel(move)
 	else:
+		var dest_cell: int = _neighbor(int(move["from"]), int(move["dir"]), 1)
+		made_progress = piece_type(dest_cell) == WALL
 		_apply_single_move(move)
 	turn_number += 1
+	if made_progress or _occupied_count > occ_high:
+		occ_high = maxi(occ_high, _occupied_count)
+		since_progress = 0
+	else:
+		since_progress += 1
 	if road_exists(actor):
 		over = true
 		winner = actor
@@ -363,7 +428,7 @@ func apply_move(move: Dictionary) -> void:
 		over = true
 		winner = current
 		return
-	if _board_full() or not has_legal_move():
+	if _board_full() or since_progress >= 120 or not has_legal_move():
 		_finish_by_count()
 
 func _apply_single_move(move: Dictionary) -> void:
@@ -375,6 +440,19 @@ func _apply_single_move(move: Dictionary) -> void:
 	cells[base] = 0
 	heights[origin] = 0
 	_occupied_count -= 1
+	_update_road_mask_cell(origin)
+	if piece_type(destination) == WALL:
+		cells[destination * MAX_STACK + int(heights[destination]) - 1] = piece_owner(destination) * 3 + FLAT
+	_push_encoded(destination, stone)
+	_update_road_mask_cell(destination)
+
+func _apply_peel(move: Dictionary) -> void:
+	var origin: int = int(move["from"])
+	var destination: int = peel_landing(origin, int(move["dir"]))
+	var top_index: int = origin * MAX_STACK + int(heights[origin]) - 1
+	var stone: int = int(cells[top_index])
+	cells[top_index] = 0
+	heights[origin] = int(heights[origin]) - 1
 	_update_road_mask_cell(origin)
 	if piece_type(destination) == WALL:
 		cells[destination * MAX_STACK + int(heights[destination]) - 1] = piece_owner(destination) * 3 + FLAT
@@ -464,6 +542,8 @@ func _move_signature(move: Dictionary) -> int:
 		return (1 << 30) | (int(move["cell"]) << 3) | int(move["piece_type"])
 	if str(move.get("kind", "")) == "topple":
 		return (2 << 30) | int(move["from"]) | (int(move["dir"]) << 5)
+	if str(move.get("kind", "")) == "peel":
+		return (3 << 30) | int(move["from"]) | (int(move["dir"]) << 5)
 	return int(move["from"]) | (int(move["dir"]) << 5)
 
 func _push_piece(cell: int, owner: int, piece: int) -> void:
