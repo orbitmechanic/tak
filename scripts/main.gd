@@ -685,9 +685,9 @@ func _build_hud() -> void:
 	house_list_label = _add_label("", Vector2(665, 396), Vector2(425, 40), 13, "heading")
 	house_note_label = _add_label("Rules marked * are house rules (House Rules button).", Vector2(665, 428), Vector2(425, 30), 12, "help")
 	house_note_label.visible = false
-	hint_off_button = _add_button("Hint Off", Vector2(905, 604), Vector2(88, 36))
+	hint_off_button = _add_button("Hint Offensive", Vector2(665, 604), Vector2(124, 36))
 	hint_off_button.pressed.connect(_request_hint.bind(false))
-	hint_def_button = _add_button("Hint Def", Vector2(1001, 604), Vector2(88, 36))
+	hint_def_button = _add_button("Hint Defensive", Vector2(797, 604), Vector2(126, 36))
 	hint_def_button.pressed.connect(_request_hint.bind(true))
 	var house: Button = _add_button("House Rules", Vector2(665, 646), Vector2(104, 36))
 	house.pressed.connect(_toggle_rule_popup)
