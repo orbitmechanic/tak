@@ -568,18 +568,16 @@ func _finish_by_count() -> void:
 	var dark_flats: int = flats_count(1)
 	winner = 0 if light_flats > dark_flats else (1 if dark_flats > light_flats else 2)
 
+const _DIRS: Array[Vector2i] = [Vector2i.RIGHT, Vector2i.LEFT, Vector2i.DOWN, Vector2i.UP]
+const _BOARD_RECT: Rect2i = Rect2i(Vector2i.ZERO, Vector2i(BOARD_SIZE, BOARD_SIZE))
+
+func _cell_vec(cell: int) -> Vector2i:
+	return Vector2i(cell % BOARD_SIZE, int(cell / BOARD_SIZE))
+
 func _neighbor(cell: int, direction: int, distance: int = 1) -> int:
-	var x: int = cell % BOARD_SIZE
-	var y: int = cell / BOARD_SIZE
-	match direction:
-		0:
-			x += distance
-		1:
-			x -= distance
-		2:
-			y += distance
-		3:
-			y -= distance
-	if x < 0 or x >= BOARD_SIZE or y < 0 or y >= BOARD_SIZE:
+	if direction < 0 or direction > 3:
 		return -1
-	return y * BOARD_SIZE + x
+	var point: Vector2i = _cell_vec(cell) + _DIRS[direction] * distance
+	if not _BOARD_RECT.has_point(point):
+		return -1
+	return point.y * BOARD_SIZE + point.x
