@@ -6,11 +6,11 @@ run/main_scene="res://scenes/Main.tscn"
 
 [display]
 window/size/viewport_width=1100
-window/size/viewport_height=750
-window/size/window_width_override=1100
-window/size/window_height_override=750
+window/size/viewport_height=1040
+window/size/window_width_override=900
+window/size/window_height_override=900
 window/stretch/mode="canvas_items"
-window/stretch/aspect="expand"
+window/stretch/aspect="keep"
 
 [rendering]
 renderer/rendering_method="gl_compatibility"

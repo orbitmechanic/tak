@@ -3,7 +3,7 @@ extends Node2D
 const TakState = preload("res://scripts/tak_state.gd")
 const MctsBot = preload("res://scripts/mcts_bot.gd")
 const CELL: float = 112.0
-const BOARD_ORIGIN: Vector2 = Vector2(52.0, 126.0)
+const BOARD_ORIGIN: Vector2 = Vector2(270.0, 96.0)
 const BOARD_PIXELS: float = CELL * 5.0
 const STONE_FLIGHT: float = 0.28
 const TOPPLE_STAGGER: float = 0.09
@@ -221,32 +221,50 @@ func _build_ui() -> void:
 	top.add_child(fresh)
 	var panel := PanelContainer.new()
 	panel.theme = app_theme
-	panel.set_anchors_preset(Control.PRESET_TOP_RIGHT)
-	panel.offset_left = -472.0
-	panel.offset_top = 64.0
-	panel.offset_bottom = 20.0
+	panel.offset_left = 110.0
+	panel.offset_top = 676.0
+	panel.offset_right = 990.0
+	panel.offset_bottom = 1036.0
 	ui_layer.add_child(panel)
 	theme_targets = [margin, panel]
 	var vbox := VBoxContainer.new()
-	vbox.add_theme_constant_override("separation", 6)
+	vbox.add_theme_constant_override("separation", 4)
 	panel.add_child(vbox)
 	reserve_label = _mk_label("", "ReserveLabel")
+	reserve_label.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
 	vbox.add_child(reserve_label)
-	vbox.add_child(_mk_label("PLACE TOOL", "HeadingLabel"))
+	var mid := HBoxContainer.new()
+	mid.add_theme_constant_override("separation", 40)
+	vbox.add_child(mid)
+	var tool_col := VBoxContainer.new()
+	tool_col.add_theme_constant_override("separation", 6)
+	mid.add_child(tool_col)
+	tool_col.add_child(_mk_label("PLACE TOOL", "HeadingLabel"))
 	var tool_row := HBoxContainer.new()
 	tool_row.add_theme_constant_override("separation", 8)
-	vbox.add_child(tool_row)
+	tool_col.add_child(tool_row)
 	var tool_labels: Array[String] = ["Flat  F", "Wall  W", "Cap  C"]
 	for type: int in range(3):
 		var button := _mk_button(tool_labels[type])
 		button.toggle_mode = true
 		button.button_pressed = type == piece_choice
-		button.custom_minimum_size = Vector2(92, 36)
+		button.custom_minimum_size = Vector2(92, 32)
 		button.pressed.connect(_on_tool_pressed.bind(type))
 		tool_row.add_child(button)
 		tool_buttons.append(button)
+	var house_col := VBoxContainer.new()
+	house_col.add_theme_constant_override("separation", 6)
+	house_col.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	house_col.size_flags_vertical = Control.SIZE_SHRINK_BEGIN
+	mid.add_child(house_col)
+	house_list_label = _mk_label("", "HeadingLabel", true)
+	house_col.add_child(house_list_label)
+	house_note_label = _mk_label("Rules marked * are house rules (House Rules button).", "HelpLabel", true)
+	house_note_label.visible = false
+	house_col.add_child(house_note_label)
+	court_label = _mk_label("", "CourtLabel", true)
+	house_col.add_child(court_label)
 	var separator := HSeparator.new()
-	separator.add_theme_constant_override("separation", 6)
 	vbox.add_child(separator)
 	vbox.add_child(_mk_label("ACTIONS", "HeadingLabel"))
 	move_label = _mk_label("", "HelpLabel", true)
@@ -254,42 +272,37 @@ func _build_ui() -> void:
 	wall_label = _mk_label("", "HelpLabel", true)
 	win_label = _mk_label("", "HelpLabel", true)
 	for label: Label in [move_label, topple_label, wall_label, win_label]:
-		label.custom_minimum_size = Vector2(420, 0)
+		label.custom_minimum_size = Vector2(840, 0)
 		vbox.add_child(label)
 	vbox.add_child(_mk_label("Pulsing ring = last move. F/W/C stone; Esc clears; M mutes.", "HelpLabel", true))
 	var hint_row := HBoxContainer.new()
 	hint_row.add_theme_constant_override("separation", 8)
+	hint_row.alignment = BoxContainer.ALIGNMENT_CENTER
 	vbox.add_child(hint_row)
 	hint_off_button = _mk_button("Hint Offensive", "Show what the Offensive brain would play, without playing it")
-	hint_off_button.custom_minimum_size = Vector2(130, 36)
+	hint_off_button.custom_minimum_size = Vector2(130, 32)
 	hint_off_button.pressed.connect(_request_hint.bind(false))
 	hint_row.add_child(hint_off_button)
 	hint_def_button = _mk_button("Hint Defensive", "Show what the Defensive brain would play, without playing it")
-	hint_def_button.custom_minimum_size = Vector2(130, 36)
+	hint_def_button.custom_minimum_size = Vector2(130, 32)
 	hint_def_button.pressed.connect(_request_hint.bind(true))
 	hint_row.add_child(hint_def_button)
 	var bottom_row := HBoxContainer.new()
 	bottom_row.add_theme_constant_override("separation", 8)
+	bottom_row.alignment = BoxContainer.ALIGNMENT_CENTER
 	vbox.add_child(bottom_row)
 	var house := _mk_button("House Rules")
-	house.custom_minimum_size = Vector2(108, 36)
+	house.custom_minimum_size = Vector2(108, 32)
 	house.pressed.connect(_toggle_rule_popup)
 	bottom_row.add_child(house)
 	var brains := _mk_button("Bot Brains")
-	brains.custom_minimum_size = Vector2(100, 36)
+	brains.custom_minimum_size = Vector2(100, 32)
 	brains.pressed.connect(_toggle_brain_popup)
 	bottom_row.add_child(brains)
 	dark_button = _mk_button("Dark")
-	dark_button.custom_minimum_size = Vector2(60, 36)
+	dark_button.custom_minimum_size = Vector2(60, 32)
 	dark_button.pressed.connect(_toggle_dark)
 	bottom_row.add_child(dark_button)
-	house_list_label = _mk_label("", "HeadingLabel", true)
-	vbox.add_child(house_list_label)
-	house_note_label = _mk_label("Rules marked * are house rules (House Rules button).", "HelpLabel", true)
-	house_note_label.visible = false
-	vbox.add_child(house_note_label)
-	court_label = _mk_label("", "CourtLabel", true)
-	vbox.add_child(court_label)
 	_build_rule_dialog()
 	_build_brain_dialog()
 
@@ -795,16 +808,17 @@ func _draw_nouveau_ornament() -> void:
 	_curve(Vector2(208, 8), Vector2(260, 26), Vector2(330, -4), Vector2(430, 12), GOLD, 1.4)
 	_leaf(Vector2(250, 14), -0.5, 11.0, SAGE_B)
 	_leaf(Vector2(402, 8), 2.6, 11.0, SAGE_B)
-	var stem_base := Vector2(1064.0, 744.0)
-	_curve(stem_base, Vector2(1052, 692), Vector2(1082, 660), Vector2(1062, 616), TEAL, 2.0)
-	_curve(Vector2(1062, 616), Vector2(1054, 594), Vector2(1072, 584), Vector2(1064, 566), GOLD, 1.4)
-	_leaf(Vector2(1060, 662), -1.9, 20.0, SAGE_B)
-	_leaf(Vector2(1066, 634), 1.15, 17.0, Color(TEAL, 0.75))
-	_leaf(Vector2(1058, 700), -1.2, 22.0, SAGE_B)
-	_lily(Vector2(1064, 560), 10.0)
-	_lily(Vector2(60, 646), 9.0)
-	_rosette(Vector2(1040.0, 752.0), 5.0)
-	_rosette(Vector2(1088.0, 752.0), 5.0)
+	var stem_base := Vector2(1044.0, 1030.0)
+	_curve(stem_base, Vector2(1032, 978), Vector2(1062, 946), Vector2(1042, 902), TEAL, 2.0)
+	_curve(Vector2(1042, 902), Vector2(1034, 880), Vector2(1052, 870), Vector2(1044, 852), GOLD, 1.4)
+	_leaf(Vector2(1040, 948), -1.9, 20.0, SAGE_B)
+	_leaf(Vector2(1046, 920), 1.15, 17.0, Color(TEAL, 0.75))
+	_leaf(Vector2(1038, 986), -1.2, 22.0, SAGE_B)
+	_lily(Vector2(1044, 846), 10.0)
+	_lily(Vector2(232, 660), 9.0)
+	_lily(Vector2(56, 1006), 9.0)
+	_rosette(Vector2(1020.0, 1034.0), 5.0)
+	_rosette(Vector2(1068.0, 1034.0), 5.0)
 
 func _lily(center: Vector2, size: float) -> void:
 	for k: int in range(5):
