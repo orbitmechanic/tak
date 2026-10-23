@@ -83,7 +83,7 @@ var court_cells: Array[int] = []
 var spectate_wait: float = RESTART_DELAY
 var ui_layer: CanvasLayer
 var app_theme: Theme
-var theme_targets: Array[Control] = []
+var theme_targets: Array = []
 var status_label: Label
 var reserve_label: Label
 var undo_button: Button
@@ -1152,7 +1152,7 @@ func _apply_palette() -> void:
 		DECO_LINE = Color(0.30, 0.24, 0.08, 0.16)
 	if is_instance_valid(ui_layer):
 		app_theme = _make_theme()
-		for target: Control in theme_targets:
+		for target in theme_targets:
 			if is_instance_valid(target):
 				target.theme = app_theme
 	_refresh_rule_text()
