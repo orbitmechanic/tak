@@ -172,10 +172,13 @@ func _make_theme() -> Theme:
 	theme.set_color("font_color", "CourtLabel", TEXT_HEADING)
 	return theme
 
-func _mk_label(text: String, variation: String, expand: bool = false) -> Label:
+func _mk_label(text: String, variation: String, expand: bool = false, center: bool = false) -> Label:
 	var label := Label.new()
 	label.text = text
 	label.theme_type_variation = StringName(variation)
+	if center:
+		label.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
+		label.size_flags_horizontal = Control.SIZE_SHRINK_CENTER
 	if expand:
 		label.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
 		label.size_flags_horizontal = Control.SIZE_EXPAND_FILL
@@ -222,9 +225,9 @@ func _build_ui() -> void:
 	var panel := PanelContainer.new()
 	panel.theme = app_theme
 	panel.offset_left = 110.0
-	panel.offset_top = 676.0
+	panel.offset_top = 702.0
 	panel.offset_right = 990.0
-	panel.offset_bottom = 1036.0
+	panel.offset_bottom = 1146.0
 	ui_layer.add_child(panel)
 	theme_targets = [margin, panel]
 	var vbox := VBoxContainer.new()
@@ -233,16 +236,11 @@ func _build_ui() -> void:
 	reserve_label = _mk_label("", "ReserveLabel")
 	reserve_label.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
 	vbox.add_child(reserve_label)
-	var mid := HBoxContainer.new()
-	mid.add_theme_constant_override("separation", 40)
-	vbox.add_child(mid)
-	var tool_col := VBoxContainer.new()
-	tool_col.add_theme_constant_override("separation", 6)
-	mid.add_child(tool_col)
-	tool_col.add_child(_mk_label("PLACE TOOL", "HeadingLabel"))
+	vbox.add_child(_mk_label("PLACE TOOL", "HeadingLabel", false, true))
 	var tool_row := HBoxContainer.new()
 	tool_row.add_theme_constant_override("separation", 8)
-	tool_col.add_child(tool_row)
+	tool_row.alignment = BoxContainer.ALIGNMENT_CENTER
+	vbox.add_child(tool_row)
 	var tool_labels: Array[String] = ["Flat  F", "Wall  W", "Cap  C"]
 	for type: int in range(3):
 		var button := _mk_button(tool_labels[type])
@@ -252,29 +250,17 @@ func _build_ui() -> void:
 		button.pressed.connect(_on_tool_pressed.bind(type))
 		tool_row.add_child(button)
 		tool_buttons.append(button)
-	var house_col := VBoxContainer.new()
-	house_col.add_theme_constant_override("separation", 6)
-	house_col.size_flags_horizontal = Control.SIZE_EXPAND_FILL
-	house_col.size_flags_vertical = Control.SIZE_SHRINK_BEGIN
-	mid.add_child(house_col)
-	house_list_label = _mk_label("", "HeadingLabel", true)
-	house_col.add_child(house_list_label)
-	house_note_label = _mk_label("Rules marked * are house rules (House Rules button).", "HelpLabel", true)
-	house_note_label.visible = false
-	house_col.add_child(house_note_label)
-	court_label = _mk_label("", "CourtLabel", true)
-	house_col.add_child(court_label)
 	var separator := HSeparator.new()
 	vbox.add_child(separator)
-	vbox.add_child(_mk_label("ACTIONS", "HeadingLabel"))
-	move_label = _mk_label("", "HelpLabel", true)
-	topple_label = _mk_label("", "HelpLabel", true)
-	wall_label = _mk_label("", "HelpLabel", true)
-	win_label = _mk_label("", "HelpLabel", true)
+	vbox.add_child(_mk_label("ACTIONS", "HeadingLabel", false, true))
+	move_label = _mk_label("", "HelpLabel", true, true)
+	topple_label = _mk_label("", "HelpLabel", true, true)
+	wall_label = _mk_label("", "HelpLabel", true, true)
+	win_label = _mk_label("", "HelpLabel", true, true)
 	for label: Label in [move_label, topple_label, wall_label, win_label]:
 		label.custom_minimum_size = Vector2(840, 0)
 		vbox.add_child(label)
-	vbox.add_child(_mk_label("Pulsing ring = last move. F/W/C stone; Esc clears; M mutes.", "HelpLabel", true))
+	vbox.add_child(_mk_label("Pulsing ring = last move. F/W/C stone; Esc clears; M mutes.", "HelpLabel", true, true))
 	var hint_row := HBoxContainer.new()
 	hint_row.add_theme_constant_override("separation", 8)
 	hint_row.alignment = BoxContainer.ALIGNMENT_CENTER
@@ -303,6 +289,13 @@ func _build_ui() -> void:
 	dark_button.custom_minimum_size = Vector2(60, 32)
 	dark_button.pressed.connect(_toggle_dark)
 	bottom_row.add_child(dark_button)
+	house_list_label = _mk_label("", "HeadingLabel", true, true)
+	vbox.add_child(house_list_label)
+	house_note_label = _mk_label("Rules marked * are house rules (House Rules button).", "HelpLabel", true, true)
+	house_note_label.visible = false
+	vbox.add_child(house_note_label)
+	court_label = _mk_label("", "CourtLabel", true, true)
+	vbox.add_child(court_label)
 	_build_rule_dialog()
 	_build_brain_dialog()
 
